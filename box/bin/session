@@ -1,0 +1,144 @@
+#!/bin/bash
+# Session
+#
+# Copyright Tarim 2013,2014
+# 
+# Session is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# Session is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General Public License
+# along with Session.  If not, see <http://www.gnu.org/licenses/>.
+
+#
+# Error routine
+#
+err() {
+    echo "$@" >&2
+    exit 2
+}
+
+#
+# Check not more than 2 arguments
+#
+argcheck() {
+    [ $# -gt 2 ] && err "$0 $1: Too many arguments"
+}
+
+
+
+#
+# Start a command
+#
+startsess() {
+    touch "$1" &&
+    setsid "$0" --exec "$@"
+}
+
+#
+# Internaly execute command with new session id
+#
+execsess() {
+    echo "$$" > "$1"
+    shift
+
+    if [ -n "${WatchdogDelay}" ]; then
+	while :; do
+	    "$@"
+	    sleep "${WatchdogDelay}"
+	done <&0 &
+
+    else
+	"$@" <&0 &
+    fi
+}
+
+
+
+#
+# Stop (or status) a running command
+#
+stopsess() {
+    local PGID=$( cat "$1" 2>/dev/null )
+
+    [ -n "${PGID}" ] && {
+        if [ -n "$2" ]; then
+	    pgrep -lg "${PGID}"
+
+	else
+	    pkill "${Signal:--SIGTERM}" -g "${PGID}" &&
+	    [ -n "${Signal}" ] ||
+	    rm -f "$1"
+	fi
+    }
+}
+
+
+
+
+#
+# main loop
+#
+[ "$#" = "0" ] && {
+    err "Usage: $(basename $0) [-user USER] [-kill [-SIGNAL] | -watchdog [DELAY] | -status] FILE COMMAND..."
+}
+
+case "$1" in
+    --user | -user | -u)
+	shift
+	User="$1"
+	shift
+	su -lc "$0 $*" "${User}"
+	exit $?
+	;;
+
+    --stop | -stop | --kill | -kill | -k)
+	case "$2" in
+	-*)
+	    Signal="$2"
+	    shift
+	    ;;
+	esac
+
+	argcheck "$@"
+	stopsess "$2"
+	exit $?
+	;;
+
+    --status | -status)
+	argcheck "$@"
+	shift
+	;;
+
+    --exec | -exec)
+	shift
+	execsess "$@"
+	exit $?
+	;;
+
+    --watchdog | -watchdog)
+	shift
+	export WatchdogDelay=5
+	case "$1" in
+	[0-9]*)
+	    WatchdogDelay="$1"
+	    shift
+	    ;;
+	esac
+	;;
+
+esac
+
+if [ -n "$2" ]; then
+    stopsess "$1"
+    startsess "$@"
+
+else
+    stopsess "$1" status
+fi

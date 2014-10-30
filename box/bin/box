@@ -1,0 +1,6 @@
+#!/bin/bash
+
+hwctl export 4 both up
+
+cd projects/curio/git/box
+node node_modules/box.js run.d/

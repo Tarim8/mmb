@@ -1,5 +1,6 @@
 #!/bin/bash
 
+stty 9600 raw -echo -echoe -echok -echoctl -echoke  < /dev/ttyAMA0
 hwctl export 4 both up
 hwctl export 3 out
 

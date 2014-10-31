@@ -1,6 +1,7 @@
 #!/bin/bash
 
 hwctl export 4 both up
+hwctl export 3 out
 
-cd projects/curio/git/box
+cd /home/pi/projects/curio/git/box
 node node_modules/box.js run.d/

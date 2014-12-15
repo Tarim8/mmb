@@ -18,5 +18,14 @@ hwctl export 9 out
 # record button
 hwctl export 11 in both up
 
-cd /home/pi/projects/curio/git/box
+Platform="run.d/platform-box"
+cd ${HOME}/projects/curio/git/box/
+
+poll '+%s\n' ${Platform}/rfid --unique \
+    '+record%s\n' ${Platform}/record-button.input \
+    '+right%s\n' ${Platform}/right-button.input \
+    '+centre%s\n' ${Platform}/centre-button.input \
+    '+left%s\n' ${Platform}/left-button.input \
+    '+tir%s\n' ${Platform}/rfid-tir.input \
+    | \
 node node_modules/box.js run.d/

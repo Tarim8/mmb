@@ -1,1 +1,1 @@
-Press and hold the red button to record a story.
+Record menu. Press and hold the red button to record a story.

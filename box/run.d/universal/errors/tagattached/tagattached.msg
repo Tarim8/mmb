@@ -1,1 +1,1 @@
-Tag already in use.
+Object already has a story.

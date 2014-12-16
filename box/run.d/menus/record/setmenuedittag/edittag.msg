@@ -1,1 +1,1 @@
-Edit tag. Press right button to attach tag.
+Edit object. Press the right button to link it to the object.

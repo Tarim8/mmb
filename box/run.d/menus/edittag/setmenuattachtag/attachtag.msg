@@ -1,1 +1,1 @@
-Place the object to link it to this sound.
+Place the object to link it to the story.

@@ -1,1 +1,1 @@
-Place the object to unlink it from any sound.
+Place the object to free it from a story.

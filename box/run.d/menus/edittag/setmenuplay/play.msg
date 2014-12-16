@@ -1,1 +1,1 @@
-Play. Left and right buttons move backwards and forwards through sounds.
+The red and green buttons move backwards and forwards through the stories.

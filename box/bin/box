@@ -24,10 +24,11 @@ cd ${HOME}/projects/curio/git/box/
 poll '+%s\n' ${Platform}/rfid \
     --unique \
     '+tir%s\n' ${Platform}/rfid-tir.input \
-    --debounce 20 \
-    '+record%s\n' ${Platform}/record-button.input \
+    --debounce 50 \
     '+right%s\n' ${Platform}/right-button.input \
     '+centre%s\n' ${Platform}/centre-button.input \
     '+left%s\n' ${Platform}/left-button.input \
+    '+upper%s\n' ${Platform}/upper-button.input \
+    '+lower%s\n' ${Platform}/lower-button.input \
     | \
 node node_modules/box.js run.d/

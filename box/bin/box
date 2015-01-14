@@ -15,8 +15,10 @@ hwctl export 22 in both up
 hwctl export 10 out
 # record LED
 hwctl export 9 out
-# record button
+# upper button
 hwctl export 11 in both up
+# upper button
+hwctl export 8 in both up
 
 Platform="run.d/platform-box"
 cd ${HOME}/projects/curio/git/box/

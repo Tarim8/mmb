@@ -1,36 +1,57 @@
-#!/bin/bash
-
-# serial port set-up
-stty 9600 raw -echo -echoe -echok -echoctl -echoke  < /dev/ttyAMA0
-
-# RFID tag in range
-hwctl export 4 in both
-# left button
-hwctl export 17 in both up
-# centre button
-hwctl export 27 in both up
-# right button
-hwctl export 22 in both up
-# ready LED
-hwctl export 10 out
-# record LED
-hwctl export 9 out
-# upper button
-hwctl export 11 in both up
-# upper button
-hwctl export 8 in both up
+#!/bin/sh
 
 Platform="run.d/platform-box"
-cd ${HOME}/projects/curio/git/box/
 
-poll '+%s\n' ${Platform}/rfid \
-    --unique \
-    '+tir%s\n' ${Platform}/rfid-tir.input \
-    --debounce 50 \
-    '+right%s\n' ${Platform}/right-button.input \
-    '+centre%s\n' ${Platform}/centre-button.input \
-    '+left%s\n' ${Platform}/left-button.input \
-    '+upper%s\n' ${Platform}/upper-button.input \
-    '+lower%s\n' ${Platform}/lower-button.input \
-    | \
-node node_modules/box.js run.d/
+pollarg() {
+    local Arg=$( basename "$1" )
+    PollArg="${PollArg} +${Arg%%.*}%s\\n $1"
+}
+
+setdevice() {
+    local GPIO=$( readlink "$1" )
+    GPIO=${GPIO%/value}
+    GPIO=${GPIO#/sys/class/gpio/gpio}
+    shift
+
+    local OnlyEcho=echo
+    case "${GPIO}" in
+    [0-9] | [0-9][0-9] | [0-9][0-9][0-9])
+	OnlyEcho=""
+	;;
+    esac
+
+    $OnlyEcho hwctl export "${GPIO}" "$@"
+}
+
+for Arg in ${Platform}/*serial --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
+    case "${Arg}" in
+    -* | +* | [0-9]*)
+	PollArg="${PollArg} ${Arg}"
+	;;
+    '*')
+	;;
+    *.pserial)
+	pollarg "${Arg}"
+	;;
+    *.serial)
+	[ -c "${Arg}" ] && {
+	    pollarg "${Arg}"
+	    stty 9600 raw -echo -echoe -echok -echoctl -echoke  < ${Arg}
+	}
+	;;
+    *.switch)
+	pollarg "${Arg}"
+	setdevice "${Arg}" in both up
+	;;
+    *.input)
+	pollarg "${Arg}"
+	setdevice "${Arg}" in both
+	;;
+    *.output)
+	setdevice "${Arg}" out
+	;;
+    esac
+done
+
+cd ${HOME}/projects/curio/git/box/
+poll ${PollArg} | node node_modules/box.js run.d/

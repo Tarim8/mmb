@@ -28,14 +28,19 @@ RecTrim="${Prefix}trim.wav"
 
 MinTime=1.0
 SilenceGap=".1"
-SilenceThreashold="2%"
+SilenceThreshold="2%"
 GainDB="-0.1"
 #NoiseReduction="0.3"
 
 while [ "$#" -gt 0 ]; do
     case "${1}" in
+    --audiodev)
+	RecordEnv="AUDIODEV=${2}"
+	shift
+	;;
+
     -*)
-	echo "Unknown option $1" 1>&2
+	echo "Unknown option ${1}" 1>&2
 	exit 2
 	;;
 
@@ -58,13 +63,13 @@ stoprec() {
 }
 
 trap cleanup INT
-rec -q "${RecRaw}" &
+${RecordEnv} rec -q "${RecRaw}" &
 RecPID="$!"
 trap stoprec INT
 wait "${RecPID}"
 
 sox "${RecRaw}" "${RecHeader}"
-sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreashold}"
+sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"
 
 Duration=$( soxi -D "${RecTrim}" )
 Silence=$( echo $( soxi -D "${RecHeader}" )-${Duration}-0.1 | bc -l )

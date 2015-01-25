@@ -1,2 +1,2 @@
-onAir=1
+action=record
 audiodev=hw:1,0

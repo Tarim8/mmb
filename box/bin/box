@@ -216,7 +216,7 @@ cmd_setup() {
     local CopyCmd="rsync --archive --verbose --delete"
     ${CopyCmd} ${Src}/bin/* ~/bin/
     ${CopyCmd} "${Src}/node_modules" "${MyDir}/"
-    ${CopyCmd} "${Src}/platform" "${MyDir}/"
+    ${CopyCmd} "${Src}/platform-production/" "${MyDir}/platform"
     ${CopyCmd} "${Src}/run.d" "${MyDir}/"
 
     sudo cp --preserve=mode,timestamps "${Src}/etc/rc.local" "/etc/rc.local"

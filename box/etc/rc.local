@@ -18,7 +18,7 @@ if [ "$_IP" ]; then
 fi
 
 dmesg | grep -qi keyboard || {
-    su -lc "box >> /home/pi/logs/box.log" pi
+    su -lc "box start" pi
 }
 
 exit 0

@@ -227,7 +227,7 @@ cmd_setup() {
 
 
 # test
-# test come piece of code
+# test code
 #
 cmd_test() {
     echo testing...

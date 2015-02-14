@@ -112,7 +112,7 @@ cmd_run() {
 	err "Node not installed"
     fi
 
-    for Arg in ${Platform}/*serial --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
+    for Arg in ${Platform}/*.output ${Platform}/*serial --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
 	case "${Arg}" in
 	-* | +* | [0-9]*)
 	    PollArg="${PollArg} ${Arg}"

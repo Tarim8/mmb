@@ -1,1 +1,0 @@
-Object has no story.

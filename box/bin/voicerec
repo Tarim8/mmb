@@ -35,7 +35,7 @@ GainDB="-0.1"
 while [ "$#" -gt 0 ]; do
     case "${1}" in
     --audiodev)
-	RecordEnv="AUDIODEV=${2}"
+	export AUDIODEV="${2}"
 	shift
 	;;
 
@@ -63,10 +63,15 @@ stoprec() {
 }
 
 trap cleanup INT
-${RecordEnv} rec -q "${RecRaw}" &
+rec -q "${RecRaw}" &
 RecPID="$!"
 trap stoprec INT
 wait "${RecPID}"
+
+[ -e "${RecRaw}" ] || {
+    echo "No recording" 1>&2
+    cleanup 3
+}
 
 sox "${RecRaw}" "${RecHeader}"
 sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"

@@ -1,0 +1,159 @@
+#!/bin/sh
+
+# monitor the system in various ways
+
+#
+# pipe to log file or logger
+#
+log() {
+    if [ -n "${LogFile}" ]; then
+        sed '/^$/d;s/^/'"$(date '+%F %T') ${MyName} /" >> "${LogFile}"
+
+    else
+        sed '/^$/d' | logger -t ${MyName}
+   fi
+}
+
+#
+# decrement ${1}CountDown, if -ve then ${1}CountDown = ${1}Time; return true
+#
+countdown() {
+    eval '[ -n "${'${1}'Time}" ] || return 1'
+
+    eval ${1}'CountDown=$((${'${1}'CountDown:-0} - ${NapTime}))'
+
+    if eval '[ "${'${1}'CountDown}" -le 0 ]'; then
+        eval ${1}'CountDown="${'${1}'Time}"'
+        return 0
+
+    else
+        return 1
+    fi
+}
+
+
+
+
+MyName=$(basename "$0")
+GlobalConf="/etc/${MyName}.conf"
+LocalConf="${HOME}/${MyName}.conf"
+
+LogFile="/dev/stdout"
+
+StartupTime=0
+NapTime=60
+
+PingRemote="8.8.8.8"
+NoteCmd="false"
+ShutdownTest="true"
+ShutdownCmd="shutdown -P now '${MyName} shutdown'"
+
+#
+# Check for config file
+#
+if [ -n "$1" -a -r "$1" ]; then
+    . "$1"
+
+elif [ -r "${LocalConf} ]; then
+    . "${LocalConf}"
+
+elif [ -r "${GlobalConf} ]; then
+    LogFile="/var/log/${MyName}.log"
+    . "${GlobalConf}"
+
+else
+    echo "No config file" >&2
+    exit 1
+
+fi
+
+
+
+#
+# ping a remote site
+#
+pinger() {
+    countdown Ping && {
+        ping -c 1 -t 100 "${PingRemote}" >/dev/null 2>&1
+    }
+}
+
+
+
+#
+# raw thermal reporting for Note
+#
+raw_thermal() {
+    local Zone
+    for Zone in /sys/class/thermal/thermal_zone*; do
+        echo "$(basename ${Zone}) $(cat ${Zone}/temp)"
+    done
+}
+
+#
+# pi thermal reporting for Note
+#
+pi_thermal() {
+    raw_thermal
+    /opt/vc/bin/vcgencmd measure_temp
+}
+
+#
+# Just log a command
+#
+note() {
+    countdown Note && {
+        $NoteCmd | log
+    }
+}
+
+
+
+#
+# Create a reverse ssh connection
+#
+[ -n "${ConnectCmd}" ] || {
+    ConnectCmd="ssh -nN -k -o ServerAliveInterval=250 -R${ConnectPort}:localhost:22 ${ConnectLogin}"
+}
+
+connect() {
+    countdown Connect && {
+        pgrep -f "${ConnectCmd}" >/dev/null || {
+            echo "${ConnectCmd}" | log
+            ${ConnectCmd} &
+        }
+     }
+}
+
+
+
+#
+# Shutdown the system if ShutdownTest is false for ShutdownTime
+#
+shutdown_test() {
+    if ${ShutdownTest}; then
+        ShutdownCountDown="${ShutdownTime}"
+
+    else
+        countdown Shutdown && {
+            echo "Shutdown" | log
+            ${ShutdownSudo} ${ShutdownCmd}
+            echo "Shutdown cancelled" | log
+        }
+    fi
+}
+
+
+#
+# Main loop
+#
+sleep "${StartupTime}"
+
+while :; do
+    connect
+    note
+    pinger
+    shutdown_test
+
+    sleep "${NapTime}"
+done

@@ -83,11 +83,11 @@ sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"
 
 Duration=$( soxi -D "${RecTrim}" )
 Silence=$( echo $( soxi -D "${RecHeader}" )-${Duration}-0.1 | bc -l )
-[ $( echo "${Silence}<0.5" | bc -l ) = "1" ] && {
+[ $( echo "${Silence}<0.5" | bc -l )"" = "1" ] && {
     Silence=""
 }
 
-[ $( echo "${Duration}<${MinTime}" | bc -l ) = "1" ] && {
+[ $( echo "${Duration}<${MinTime}" | bc -l )"" = "1" ] && {
     echo "Sound too short: ${Duration}" 1>&2
     cleanup 4
 }

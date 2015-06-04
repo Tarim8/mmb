@@ -1,21 +1,21 @@
 #!/bin/bash
 
-# Start and stop Memoryscapes daemon
+# Start and stop Box daemon
 #
 # Copyright Tarim 2013,2014,2015
 #
-# Memoryscapes is free software: you can redistribute it and/or modify
+# Box is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Memoryscapes is distributed in the hope that it will be useful,
+# Box is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU Lesser General Public License
-# along with Memoryscapes.  If not, see <http://www.gnu.org/licenses/>.
+# along with Box.  If not, see <http://www.gnu.org/licenses/>.
 
 Prefix="cmd_"
 shopt -s nullglob
@@ -23,7 +23,8 @@ Me=$(basename $0)
 
 PGIDFile="/tmp/${Me}.pgid"
 MyDir="/home/pi/${Me}"
-LogFile="${MyDir}/platform/${Me}.log"
+Platform="${MyDir}/run.d/platform"
+LogFile="${Platform}/${Me}.log"
 
 
 
@@ -75,6 +76,8 @@ cmd_help() {
     }
 }
 
+
+
 pollarg() {
     local Arg=$( basename "$1" )
     PollArg="${PollArg} +${Arg%%.*}%s\\n $1"
@@ -96,11 +99,12 @@ setdevice() {
     $OnlyEcho hwctl export "${GPIO}" "$@"
 }
 
+
+
 # cmd_run
 # Run daemon
 #
 cmd_run() {
-    local Platform="${MyDir}/run.d/platform"
     local Arg
     local NodeCmd
     
@@ -146,11 +150,13 @@ cmd_run() {
     poll ${PollArg} | ${NodeCmd} "${MyDir}/node_modules/${Me}.js" "${MyDir}/run.d"
 }
 
+
+
 # cmd_start
 # Start daemon
 #
 cmd_start() {
-    session -watchdog ${RestartDelay} "${PGIDFile}" "${Me}" run >> "${LogFile}" 2>&1
+    session -watchcmd "$0 cleanup ${RestartDelay:-5}" "${PGIDFile}" "$0" run >> "${LogFile}" 2>&1
 }
 
 
@@ -166,6 +172,8 @@ cmd_status() {
     }
 }
 
+
+
 # cmd_stop
 # Stop daemon
 #
@@ -173,6 +181,26 @@ cmd_stop() {
     session -kill -sigint "${PGIDFile}" 
     sleep 1
     session -kill "${PGIDFile}"
+    cmd_cleanup
+}
+
+
+
+# cmd_cleanup
+# Set GPIO outputs to 0
+#
+cmd_cleanup() {
+    echo "${Me}: cleanup"
+
+    local Arg
+    for Arg in ${Platform}/*.output; do
+        echo "0" > ${Arg}
+    done
+
+    [ -n "$1" ] && {
+        sleep ${1}
+        echo "${Me}: respawn"
+    }
 }
 
 
@@ -248,5 +276,3 @@ Cmd="$1"
 shift
 
 "cmd_${Cmd}" "$@"
-
-

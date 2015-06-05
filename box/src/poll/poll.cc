@@ -17,8 +17,8 @@
 
 //
 // Poll waits for interrupts on character devices, named pipes and
-// /sys/class/gpio/gpioX/value style files.  It then echoes the updated
-// contents of the file, optionally with filename and a timestamp.
+// /sys/class/gpio/gpioX/value style files.  It outputs lines from
+// the updated file, optionally with filename and a timestamp.
 //
 
 //
@@ -27,11 +27,11 @@
 // as time efficient as possible.  String handling is all C style rather
 // than C++ Strings. There is no mallocing of space (there may be some
 // within library routines but we have no control of this) and no dynamic
-// creation of class instances.
+// creation of class instances during the main loop.
 //
-// Input "lines" are read into fixed length, pre-allocated buffers and
-// transferred to an output buffer for sending on its way in a, hopefully,
-// atomic operation.
+// Input lines are read into fixed length, pre-allocated buffers and
+// transferred to an output buffer for sending on its way in an atomic
+// operation.
 //
 
 
@@ -51,10 +51,25 @@
 
 
 
+// Maximum line length
 const unsigned int bufferSize = 1024;
-const unsigned int bufferCount = 3;
+
+// Nanoseconds since Unix Epoch
 typedef uint64_t long_time_t;
 const long_time_t FOREVER = -1;
+
+// Translate \x character sequences in STRING arguments
+char lookupChr[] = "abfnrtv\\123456789";
+char translateChr[] = "\a\b\f\n\r\t\v\\\001\002\003\004\005\006\007\010\011";
+
+// % options in format strings
+char formatChr[] = "lpt";
+
+// Maximum number of files
+const nfds_t pfdMax = 64;
+
+// Global variable of number of files
+nfds_t pfdCount = 0;
 
 
 
@@ -134,17 +149,6 @@ public:
 
 
 //
-// fds provided by poll.h
-//
-// nfds_t                       // fdsIndex type
-// fds[fdsIndex].fd             // File descriptor
-// fds[fdsIndex].events         // Events we're interested in
-// fds[fdsIndex].revents        // Events that happened
-//
-
-
-
-//
 // PFDOption class
 //
 // Poll file descriptor options associated with output
@@ -158,7 +162,7 @@ public:
     bool duplicates;            // Allow duplicate values to be sent onwards
 
     void init() {
-        format = (char *)"V\n";
+        format = (char *)"l\n";
         formatEnd = format + strlen( format );
         delimiters = (char *)"\n";
         debounce = 0;
@@ -169,44 +173,58 @@ public:
 
 
 //
+// Poll File descriptor provided by poll.h
+// Would be nice to include these as part of PFDFileDescriptor class
+// but they have to be in their own array for poll.
+//
+// nfds_t                       // pfdIndex type
+// pfd[pfdIndex].fd             // File descriptor
+// pfd[pfdIndex].events         // Events we're interested in
+// pfd[pfdIndex].revents        // Events that happened
+//
+struct pollfd pfd[pfdMax];      // structure used by poll.h
+
+
+
+//
 // Poll file descriptor class
 //
 // Handle a file descriptor and all its associated options
 //
-
-const nfds_t pfdMax = 64;       // number of file descriptors
-nfds_t pfdCount = 0;
-struct pollfd pfd[pfdMax];      // structure used by poll.h
+// pollFileDescriptor[pfdMax]
 
 class PollFileDescriptor {
-public:
+private:
+    nfds_t index;               // Copy of the array index
+
     char *pathname;
-    struct stat status;
 
-    nfds_t index;
+    struct stat status;         // Status of the pathname
+    int openMode;               // Pipes are opened read/write to keep them from being closed
+    short pollEvents;           // Special files use priority polling
+    bool reseek;                // Special files must seek to 0 before read
 
-    int openMode;
-    short pollEvents;
-    bool reseek;
+    long_time_t readTime;       // Time data last read from device
 
-    long_time_t readTime;
-
-    PFDOption option;
+    PFDOption option;           // Output options
 
     //
-    // buffer system is coded with the kind of efficiancy that caused the
+    // buffer system is coded with the kind of efficiency that caused the
     // heartbleed bug - be warned!
     //
+    static const unsigned int bufferCount = 3;
+
     char buffer[bufferCount][bufferSize];
     uint8_t bufferIndex;
-    char *readPtr;      // start of buffer unless previously data unfinished
+    char *readPtr;      // start of buffer unless previous data unfinished
     char *printPtr;     // last printed data (usually in a different buffer)
     char *heldPtr;      // held data from debounce
 
 
 
+public:
     //
-    // check status and set modes
+    // check status and set modes for a pathname
     //
     void statpfd() {
         if( stat( pathname, &status ) < 0 ) {
@@ -346,11 +364,7 @@ public:
     // bufferOf - returns bit set of buffer which pointer is in
     //
     uint8_t bufferOf( char *ptr ) {
-        if( ptr ) {
-            return 1 << ((ptr - &(buffer[0][0])) / bufferSize);
-        } else {
-            return 0;
-        }
+        return ptr ? 1 << ((ptr - &(buffer[0][0])) / bufferSize) : 0;
     };
 
 
@@ -399,13 +413,13 @@ public:
                 switch( *formatPtr ) {
                 case '+':
                     break;
-                case 'V':
+                case 'l':
                     output.string( startPtr );
                     break;
-                case 'P':
+                case 'p':
                     output.string( pathname );
                     break;
-                case 'T':
+                case 't':
                     output.real( readTime );
                     break;
                 default:
@@ -413,6 +427,7 @@ public:
                     break;
                 }
 
+                // Output the next literal part of the format string
                 formatPtr += output.string( formatPtr + 1 ) + 2;
             }
 
@@ -425,39 +440,30 @@ public:
 
 
 
-char lookupChr[] = "abfnrtv\"\'\\123456789";
-char translateChr[] = "\a\b\f\n\r\t\v\"\'\\\001\002\003\004\005\006\007\010\011";
-
 //
 // Argument class
 //
-// Parse the arguments to set up the poll file descriptors
+// A singleton class to parse the arguments to set up the poll file descriptors
 //
 // Arguments:
 // filename             File to monitor
-// +format              Format for output content: %V, time: %T, file: %P
+// +format              Format for output, line: %l, time: %t, file: %p
 // -debounce N          Number of milliseconds to ignore results
 // --unique             Discard repeated results (useful with debounce)
 // --duplicates         Report repeated results
 // --delimiters         Characters which delimit input lines
 // --default            Reset default options for subsequent files
-// --timeout N          Not implemented yet - will allow watchdog
 //
 
-char formatChr[] = "VPT";
-
 class Argument {
-public:
-    PFDOption option;
-
-    Argument() {
-        option.init();
-    };
+private:
+    PFDOption option;           // Output options
 
     //
     // parse the backslashes in a string
     //
     char *parseString( char *arg ) {
+        // arg = strdup( arg );         // Uncomment if arguments are not writeable
         char *ptr;
         for( ptr = arg; *ptr; ++ptr ) {
             if( *ptr == '\\' ) {
@@ -477,8 +483,18 @@ public:
     //
     // parse a format string
     //
+    // Replace % with \0 to break the format string into substrings of the form:
+    // initial char
+    //          +: skip
+    //          l: output line from file
+    //          p: output filename
+    //          t: output time data was read
+    // literal string
+    //          output literal
+    // null     terminator
+    //
     char *parseFormat( char *format ) {
-        // +%V is same as V, so shift everything up for efficiency
+        // +%l is same as l, so shift everything up for efficiency
         if( format[1] == '%' && strlen( format ) >= 3 && strchr( formatChr, format[2] ) ) {
             strcpy( format, format+2 );
         }
@@ -487,7 +503,9 @@ public:
         for( ptr = format; *ptr; ++ptr ) {
             if( *ptr == '%' ) {
                 if( ptr[1] == '%' ) {
+                    // %%: move string up by one
                     strcpy( ptr+1, ptr+2 );
+
                 } else if( strchr( formatChr, ptr[1] ) ) {
                     *ptr = '\0';
                 }
@@ -497,6 +515,14 @@ public:
     };
 
 
+
+public:
+    //
+    // constructor
+    //
+    Argument() {
+        option.init();
+    };
 
     //
     // Parse the command line arguments
@@ -536,6 +562,7 @@ public:
                     exit( 1 );
                 }
 
+                // open file and copy the current options
                 pollFileDescriptor[pfdCount].openpfd( pfdCount, argv[arg], &option );
                 ++pfdCount;
             }
@@ -554,7 +581,7 @@ int main( const int argc, char **argv ) {
     arguments.parse( argc, argv );
 
     if( pfdCount == 0 ) {
-        fprintf( stderr, "Usage: %s [[--debounce TIME] [--unique] [--duplicate] [--delimiters DELIMITERS] [+format] FILE] ...\n", argv[0] );
+        fprintf( stderr, "Usage: %s [[--default] [--debounce TIME] [--unique] [--duplicate] [--delimiters DELIMITERS] [+FORMAT] FILE] ...\n", argv[0] );
         exit( 2 );
     }
 
@@ -571,7 +598,7 @@ int main( const int argc, char **argv ) {
         gettimeofday( &tv, NULL );
         now = (long_time_t)tv.tv_sec * 1000000 + tv.tv_usec;
 
-        // devices return a timeout if they need calling when they have no data
+        // devices return a timeout if they need calling when they have no data (for debounce)
         timeout = FOREVER;
         for( nfds_t pfdIndex = 0; pfdIndex < pfdCount; ++pfdIndex ) {
             timeout = std::min( timeout, pollFileDescriptor[pfdIndex].checkpfd( now ) );

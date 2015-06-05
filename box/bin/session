@@ -19,6 +19,10 @@
 #
 # Documentation
 #
+
+Date="June 2015"
+Author="Tarim"
+
 usage() {
     echo "  ${Me} [-user USER] [-watchdog [DELAY] | -watchcmd WATCHCOMMAND | -cleanup] FILE COMMAND"
     echo "  ${Me} [-user USER] [-kill [-SIGNAL]] FILE"
@@ -31,7 +35,7 @@ document() {
 NAME
 ====
 
-  __${Me}__ - run a command with its own session id
+  __${Me}__ ---- run a command with its own session id
 
 
 SYNOPSIS
@@ -128,7 +132,8 @@ CAVEATS
 
 AUTHOR
 ======
-  Written by Tarim. <session-cmd@mediaplaygrounds.co.uk>
+  Written by ${Author}.
+  Error reports to <session-cmd@mediaplaygrounds.co.uk>.
 
 
 SEE ALSO
@@ -309,20 +314,20 @@ case "$1" in
         ;;
 
     --man | -man)
-        echo -n ".TH ${Me} 1" | tr 'a-z' 'A-Z'
-        echo ' "June 2015" "Tarim" "User Commands"'
+        echo -n ".TH ${Me} 1 " | tr 'a-z' 'A-Z'
+        echo "\"${Date}\" \"${Author}\" \"User Commands\""
         echo ".nh"
         echo ".ad l"
-        document | sed 's/_-/_\\-/g' | pandoc -f markdown -t man
+        document | pandoc --to=man |
+        sed '
+            s/\\\[em\]/--/g;
+            s/---/\\-/g;
+        '
         exit 0
         ;;
 
     --html | -html)
-        echo "<html><head><title>${Me}</title>"
-        echo "<style> h1,h2 { font-size: 120%; } </style>"
-        echo "</head><body>"
-        document | pandoc -f markdown -t html
-        echo "</body></html>"
+        document | pandoc --to=html --standalone --title-prefix="${Me}" --base-header-level=2
         exit 0
         ;;
 esac

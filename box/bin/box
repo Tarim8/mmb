@@ -80,7 +80,7 @@ cmd_help() {
 
 pollarg() {
     local Arg=$( basename "$1" )
-    PollArg="${PollArg} +${Arg%%.*}%V\\n $1"
+    PollArg="${PollArg} +${Arg%%.*}%l\\n $1"
 }
 
 setdevice() {

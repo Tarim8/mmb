@@ -1,1 +1,1 @@
-No memory stick found
+No music memory box folder found

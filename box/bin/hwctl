@@ -1,0 +1,526 @@
+#!/bin/bash
+
+Version=0.23
+#DEBUG=echo
+
+GPIODir="/sys/class/gpio"
+GPIOexport="${GPIODir}/export"
+GPIOunexport="${GPIODir}/unexport"
+GPIOgpio="${GPIODir}/gpio"
+
+LEDDir="/sys/class/leds"
+LEDled="${LEDDir}/led"
+
+Syslog="/var/log/syslog"
+CPUinfo="/proc/cpuinfo"
+GPIOCmd="gpio"
+PollCmd="poll"
+HaltCmd="halt"
+
+shopt -s nullglob
+
+versiontext() {
+    echo "$( basename $0 ) version: ${Version}"
+    echo "Copyright (c) 2013 Tarim"
+}
+
+warrantytext() {
+    echo -e "\
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU Leser General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.\n"
+}
+
+usagetext() {
+    echo "\
+Usage:	hwctl -h
+	hwctl -v
+	hwctl [-g|-w] export|mode|edge <pin> in|out|both|falling|rising|none|high|low|halt|led <led>|owmer:group|pwm|up|down|tri
+	hwctl [-g|-w] read|readg|poll|unexport|gpionmb <pin>
+	hwctl [-g|-w] write|writeg <pin> [0|1]
+	hwctl exports|unexportall|readall|hostname [<name>]
+	hwctl led <led> 0|1|none|mmc0|heartbeat|ntp
+
+	hwctl drive|pwm-bal|pwm-ms|pwmr|pwmc|load|gbr|gbw
+"
+}
+
+err() {
+    echo "hwctl: $*" >&2
+    exit 1
+}
+
+# writefile VALUE FILE
+writefile() {
+    if [ -n "${DEBUG}" ]; then
+	echo "echo $1 > $2"
+    else
+	echo "$1" > "$2" || err "Cannot write $1 to $2"
+    fi
+}
+
+# index needle haystack[0] haystack[1] ...
+index() {
+    local Needle=$1
+    local Haystack
+    local Count
+    shift
+
+    [ -n "${Needle}" ] || {
+	return 1
+    }
+
+    Count=0
+    for Haystack; do
+	[ "X${Needle}" = "X${Haystack}" ] && {
+	    echo "${Count}"
+	    return 0
+	}
+	let ++Count
+    done
+    return 1
+}
+
+revision() {
+    PiInfo="/etc/rpi-issue"
+    [ -r "${PiInfo}" ] && {
+	Computer="Raspberry Pi"
+	ComputerInfo="${PiInfo}"
+
+	Revision=$( sed -n '
+	    s/^Revision[\t: ]*1*0*[23]$/1/p;
+	    s/^Revision[\t: ]*.*$/2/p;
+	' < "${CPUinfo}" )
+    }
+}
+
+# setperm OWNER:GROUP FILES...
+setperm() {
+    local Owner="$1"
+    [ -n "${Owner}" ] && {
+	shift
+	$DEBUG chown "${Owner}" "$@" &&
+	$DEBUG chmod "ug=rw" "$@"
+    }
+}
+
+# setsudoperm FILES...
+setsudoperm() {
+    [ -n "${SUDO_COMMAND}" ] && {
+	setperm "${SUDO_UID}:${SUDO_GID}" "$@"
+    }
+}
+
+# sethostname [hostname]
+sethostname() {
+    HostNameFile="${Dest}/etc/hostname"
+    HostsFile="${Dest}/etc/hosts"
+    CurrentHostName="$( cat ${HostNameFile} )"
+    NewHostName=$1
+    [ -n "${NewHostName}" ] ||
+	read -ep "Hostname [${CurrentHostName}]: " NewHostName
+
+    [ -n "${NewHostName}" ] &&
+	$DEBUG sed -i "s/${CurrentHostName}/${NewHostName}/" "${HostNameFile}" "${HostsFile}"
+
+    echo "Hostname: $( cat ${HostNameFile} )"
+}
+
+# led lednumber
+led() {
+    LED=$1
+    [ -n "${LED}" ] || {
+	err "Invalid led ${LED}"
+    }
+
+    LEDPath="${LEDled}${LED}"
+    LEDbrightness="${LEDPath}/brightness"
+    LEDtrigger="${LEDPath}/trigger"
+    LEDFiles="${LEDPath}/brightness ${LEDPath}/trigger"
+
+    setsudoperm ${LEDFiles}
+}
+
+# settrigger none|mmc0|heartbeat
+settrigger() {
+    [ "$1" = "heartbeat" ] && $DEBUG modprobe ledtrig_heartbeat
+    writefile "$1" "${LEDtrigger}"
+}
+
+# setbrightbess 0|1
+setbrightness() {
+    writefile "$1" "${LEDbrightness}"
+}
+
+ntpmonitor() {
+    local Cmd="tail -fn 23 ${Syslog}"
+    local Line
+
+    pkill -f "${Cmd}"
+    ${Cmd} | while read Line; do
+	case "${Line}" in
+	*ntpd*"Listen normally on "[2-9]*)
+	    pkill -f "${Cmd}"
+	    settrigger "heartbeat"
+	    break
+	    ;;
+	esac
+    done &
+}
+
+pinnames() {
+    if [ "0${Revision}" -eq 1 ]; then
+	Wiring=(  17     18     21 22 23 24 25      4   0   1   8   7   10    9   11  14  15)
+
+    else
+	Wiring=(  17     18     27 22 23 24 25      4   2   3   8   7   10    9   11  14  15 28 29 30 31)
+    fi
+
+	PinNames=("" PCMCLK PCMOUT "" "" "" "" CPCLK0 SDA SCL CE0 CE1 MOSI MISO SCLK TxD RxD)
+}
+
+# pin RAWPIN
+pin() {
+    Pin=""
+
+    if WiringPin=$( index "$1" "${PinNames[@]}" ); then
+	Pin="${Wiring[${WiringPin}]}"
+
+    elif [ 0 -le "$1" ] 2> /dev/null; then
+	if [ -n "${BCMNumbering}" ]; then
+	    let Pin=$1
+
+	else
+	    WiringPin="$1"
+	    Pin="${Wiring[${WiringPin}]}"
+	fi
+    fi
+
+    [ -n "${Pin}" ] || {
+	err "Invalid pin $1"
+    }
+
+    GPIOPath="${GPIOgpio}${Pin}"
+    GPIOactivelow="${GPIOPath}/active_low"
+    GPIOdirection="${GPIOPath}/direction"
+    GPIOedge="${GPIOPath}/edge"
+    GPIOvalue="${GPIOPath}/value"
+    GPIOFiles="${GPIOPath}/active_low ${GPIOPath}/direction ${GPIOPath}/edge ${GPIOPath}/value"
+    GPIOPoll="${PollCmd} ${GPIOvalue}"
+}
+
+unpoll() {
+    pkill -f "${GPIOPoll}"
+}
+
+# export pin
+export() {
+    pin "$1"
+    unpoll
+    [ -d "${GPIOPath}" ] || {
+	writefile "${Pin}" "${GPIOexport}"
+	setsudoperm ${GPIOFiles}
+    }
+sleep 1
+}
+
+# unexport PIN
+unexport() {
+    pin "$1"
+    unpoll
+    writefile "${Pin}" "${GPIOunexport}"
+}
+
+# setmode in|out
+setmode() {
+    writefile "$1" "${GPIOdirection}"
+}
+
+# setedge none|rising|falling|both
+setedge() {
+    setmode "in"
+    writefile "$1" "${GPIOedge}"
+}
+
+# setactive 0|1
+setactive() {
+    setmode "out"
+    writefile "$1" "${GPIOactivelow}"
+}
+
+# mapexports CMD HEADER
+mapexports() {
+    local Path
+    local Cmd=$1
+
+    for Path in ${GPIOgpio}[0-9]* ; do
+	[ -n "$2" ] && {
+	    echo "$2"
+	    shift
+	}
+	"${Cmd}" "${Path/${GPIOgpio}}"
+    done
+}
+
+# printgpio PIN
+printgpio() {
+    pin "$1"
+    printf "%4d: %-3s  %d  %s\n" "${Pin}" $(cat ${GPIOdirection}) $(cat ${GPIOvalue}) $(cat ${GPIOedge})
+}
+
+readall() {
+    local Count
+    local Value
+
+    echo '+----------+------+--------+-------+'
+    echo '| wiringPi | GPIO | Name   | Value |'
+    echo '+----------+------+--------+-------+'
+
+    for(( Count=0; Count < ${#Wiring[*]}; ++Count )); do
+	pin "${Count}"
+	case "$( cat ${GPIOvalue} 2>/dev/null )" in
+	0)  Value="Low"
+	    ;;
+	1)  Value="High"
+	    ;;
+	*)  Value="  -"
+	    ;;
+	esac
+
+	printf "| %6d   | %3d  | %-6s | %-5s |\n" "${Count}" "${Pin}" "${PinNames[$Count]:-WIR ${Count}}" "${Value}"
+    done
+
+    echo '+----------+------+--------+-------+'
+}
+
+# haltmonitor [LED]
+haltmonitor() {
+    local Timeout
+    local Line
+
+    [ -n "$1" ] && led "$1" 
+    ${GPIOPoll} | while
+	read ${Timeout:+-t} ${Timeout} Line
+	[ "$?" != 1 ]
+    do
+	case "${Line}" in
+	0)
+	    Timeout=5
+	    ;;
+	"")
+	    [ 0 = "${Last}" ] && {
+		$DEBUG logger -t hwctl halting
+		[ -n "${LED}" ] && settrigger "mmc0"
+		$DEBUG ${HaltCmd}
+		exit 1
+	    }
+	    ;;
+	*)
+	    Timeout=""
+	    ;;
+	esac
+
+	Last="${Line}"
+    done &
+}
+
+# ledmonitor LED
+ledmonitor() {
+    led "$1"
+    settrigger "none"
+    ${GPIOPoll} > "${LEDbrightness}" &
+}
+
+# main
+
+[ $(basename $0) = "${GPIOCmd}" ] && GPIOCmd="err Unimplemented"
+
+case "$1" in
+export | edge | unexport | unexportall | exports | activelow | readg | writeg | poll)
+    BCMNumbering="-g"
+    ;;
+-g)
+    BCMNumbering="-g"
+    shift
+    ;;
+-w)
+    BCMNumbering=""
+    shift
+    ;;
+"")
+    usagetext
+    exit 2
+    ;;
+esac
+
+Cmd=$1
+Raw=$2
+revision
+pinnames
+
+case "${Cmd}" in
+led)
+    led "${Raw}"
+    Mode=$3
+
+    case "${Mode}" in
+    0|1)
+	settrigger "none"
+	setbrightness "${Mode}"
+	;;
+
+    mmc0 | heartbeat | none)
+	setbrightness "0"
+	settrigger "${Mode}"
+	;;
+
+    ntp)
+	settrigger "none"
+	setbrightness "1"
+	ntpmonitor
+	;;
+
+    *)
+	err "Unknown LED mode: ${Mode}"
+	;;
+    esac
+    ;;
+
+read | readg)
+    pin "${Raw}"
+    cat "${GPIOvalue}"
+    ;;
+
+poll)
+    pin "${Raw}"
+    ${GPIOPoll}
+    ;;
+
+write | writeg)
+    Value=$3
+    pin "${Raw}"
+    writefile "${Value}" "${GPIOvalue}"
+    ;;
+
+mode | export | edge | activelow)
+    export "${Raw}"
+    shift
+    shift
+
+    while
+	Mode=$1
+
+	case "${Mode}" in
+	input | in | "")
+	    setmode "in"
+	    ;;
+	output | out)
+	    setmode "out"
+	    ;;
+	none | rising | falling | both)
+	    setedge "${Mode}"
+	    ;;
+	pwm | up | down | tri)
+	    $DEBUG ${GPIOCmd} ${BCMNumbering} "mode" "${Pin}" "${Mode}"
+	    ;;
+	low)
+	    setactive "0"
+	    ;;
+	high)
+	    setactive "1"
+	    ;;
+	halt)
+	    $DEBUG ${GPIOCmd} ${BCMNumbering} "mode" "${Pin}" "up"
+	    setedge "both"
+	    haltmonitor "${LED}"
+	    ;;
+	led)
+	    setedge "both"
+	    ledmonitor "$2" 
+	    shift
+	    ;;
+	*:*)
+	    setperm "${Mode}" ${GPIOFiles}
+	    ;;
+	*)
+	    err "Unknown mode: ${Mode}"
+	    ;;
+	esac
+
+	shift
+	[ "$#" -gt 0 ]; do
+	    :
+	done
+    ;;
+
+unexport)
+    unexport "${Raw}"
+    ;;
+
+unexportall)
+    mapexports unexport
+    ;;
+
+exports)
+    mapexports printgpio "GPIO Pins exported:"
+    ;;
+
+readall)
+    readall
+    ;;
+
+wb | -p | drive | pwm-bal | pwm-ms | pwmr | load | gbr | gbw)
+    $DEBUG ${GPIOCmd} ${BCMNumbering} "$@"
+    ;;
+
+-h | --help)
+    usagetext
+    ;;
+
+-v)
+    versiontext
+    echo -e "This is free software with ABSOLUTELY NO WARRANTY.
+For details type: $0 -warranty\n
+This ${Computer:-computer} is a revision ${Revision:-unknown} board."
+    ;;
+
+-warranty | --warranty)
+    versiontext
+    warrantytext
+    ;;
+
+revision)
+    [ -n "${Revision}" ] || err "Unknown revision"
+    echo "${Revision}"
+    ;;
+
+gpionmb)
+    pin "${Raw}"
+    echo "${Pin}"
+    ;;
+
+info)
+    echo "revision ${Revision:-unknown}"
+    sed -n 's/Revision\t*:/soc/p; s/Serial\t*:/serial/p' < "${CPUinfo}"
+    ifconfig | sed -n 's/^eth0.*HWaddr/mac/p'
+    [ -r "${ComputerInfo}" ] && sed -n 's/^./detail &/p' < "${ComputerInfo}"
+    ;;
+
+hostname)
+    sethostname "${Raw}"
+    ;;
+
+*)
+    err "Unknown command: ${Cmd}"
+    ;;
+esac
+

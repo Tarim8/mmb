@@ -1,0 +1,3 @@
+action=record
+audiodev=hw:1,0
+audiodriver=alsa

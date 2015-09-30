@@ -1,0 +1,104 @@
+#!/bin/sh
+# Voicerec
+#
+# Copyright Tarim 2015
+# 
+# Voicerec is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# Voicerec is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General Public License
+# along with Voicerec.  If not, see <http://www.gnu.org/licenses/>.
+
+# Record using sox and post process to:
+#  remove leading silence
+#  normalise level
+#  noise reduction
+
+Prefix=/tmp/$(basename "$0")$$-
+RecRaw="${Prefix}raw.wav"
+RecHeader="${Prefix}header.wav"
+RecTrim="${Prefix}trim.wav"
+
+MinTime=1.0
+SilenceGap=".1"
+SilenceThreshold="2%"
+GainDB="-0.1"
+#NoiseReduction="0.3"
+
+while [ "$#" -gt 0 ]; do
+    case "${1}" in
+    --audiodev)
+	export AUDIODEV="${2}"
+	shift
+	;;
+
+    --audiodriver)
+	export AUDIODRIVER="${2}"
+	shift
+	;;
+
+    -*)
+	echo "Unknown option ${1}" 1>&2
+	exit 2
+	;;
+
+    *)
+	File="${1}"
+	;;
+    esac
+    shift
+done
+
+cleanup() {
+    rm -f "${RecRaw}" "${RecHeader}" "${RecTrim}"
+    trap - INT
+    exit "${1:-1}"
+}
+
+stoprec() {
+    kill -INT "${RecPID}"
+    trap cleanup INT
+}
+
+trap cleanup INT
+rec -q "${RecRaw}" &
+RecPID="$!"
+trap stoprec INT
+wait "${RecPID}"
+
+[ -e "${RecRaw}" ] || {
+    echo "No recording" 1>&2
+    cleanup 3
+}
+
+sox "${RecRaw}" "${RecHeader}"
+sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"
+
+Duration=$( soxi -D "${RecTrim}" )
+Silence=$( echo $( soxi -D "${RecHeader}" )-${Duration}-0.1 | bc -l )
+[ $( echo "${Silence}<0.5" | bc -l )"" = "1" ] && {
+    Silence=""
+}
+
+[ $( echo "${Duration}<${MinTime}" | bc -l )"" = "1" ] && {
+    echo "Sound too short: ${Duration}" 1>&2
+    cleanup 4
+}
+
+if [ -n "${NoiseReduction}" -a -n "${Silence}" ]; then
+    echo "Reducing noise based on ${Silence}" 1>&2
+    sox "${RecHeader}" -n trim 0 "${Silence}" noiseprof | \
+    sox "${RecTrim}" "${File:--d}" noisered - "${NoiseReduction}" gain -n "${GainDB}"
+
+else
+    sox "${RecTrim}" "${File:--d}" gain -n "${GainDB}"
+fi
+
+cleanup 0

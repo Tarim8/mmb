@@ -1,0 +1,278 @@
+#!/bin/bash
+
+# Start and stop Box daemon
+#
+# Copyright Tarim 2013,2014,2015
+#
+# Box is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Box is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with Box.  If not, see <http://www.gnu.org/licenses/>.
+
+Prefix="cmd_"
+shopt -s nullglob
+Me=$(basename $0)
+
+PGIDFile="/tmp/${Me}.pgid"
+MyDir="/home/pi/${Me}"
+Platform="${MyDir}/run.d/platform"
+LogFile="${Platform}/${Me}.log"
+
+
+
+# err
+# echo an error and exit
+err() {
+    echo "$*" 1>&2
+    exit 1
+}
+
+# executable PROGRAM
+# check if it's runable
+executable() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# cmd_help [COMMAND [all]]
+# Help
+#
+cmd_help() {
+    case "$1" in
+    "")
+	StartPattern="/^# ${Prefix}/"
+	EndPattern=""
+	;;
+    "all")
+	StartPattern="/^# ${Prefix}/"
+	EndPattern=",/^${Prefix}/"
+	;;
+    *)
+	StartPattern="/^# ${Prefix}$1 /"
+	EndPattern=",/^${Prefix}/"
+	;;
+    esac
+
+    awk -v me="$(basename $0) " -v spacer="  " "
+	${StartPattern}${EndPattern} {
+	    if( sub( /^# ?/, spacer ) ) {
+		found=1
+		sub( /^ *${Prefix}/, me )
+		print
+	    }
+	}
+	END {
+	    if( !found ) exit(2)
+	}
+    " < "$0" || {
+	err "No help topic"
+    }
+}
+
+
+
+pollarg() {
+    local Arg=$( basename "$1" )
+    PollArg="${PollArg} +${Arg%%.*}%l\\n $1"
+}
+
+setdevice() {
+    local GPIO=$( readlink "$1" )
+    GPIO=${GPIO%/value}
+    GPIO=${GPIO#/sys/class/gpio/gpio}
+    shift
+
+    local OnlyEcho=echo
+    case "${GPIO}" in
+    [0-9] | [0-9][0-9] | [0-9][0-9][0-9])
+	OnlyEcho=""
+	;;
+    esac
+
+    $OnlyEcho hwctl export "${GPIO}" "$@"
+}
+
+
+
+# cmd_run
+# Run daemon
+#
+cmd_run() {
+    local Arg
+    local NodeCmd
+    
+    if executable node; then
+	NodeCmd=node
+    elif executable nodejs; then
+	NodeCmd=nodejs
+    else
+	err "Node not installed"
+    fi
+
+    for Arg in ${Platform}/*.output --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
+	case "${Arg}" in
+	-* | +* | [0-9]* | \\*)
+	    PollArg="${PollArg} ${Arg}"
+	    ;;
+	'*')
+	    ;;
+	*.pserial)
+	    pollarg "${Arg}"
+	    ;;
+	*.serial)
+	    [ -c "${Arg}" ] && {
+		pollarg "${Arg}"
+		stty 9600 raw -echo -echoe -echok -echoctl -echoke  < ${Arg}
+	    }
+	    ;;
+	*.switch)
+	    pollarg "${Arg}"
+	    setdevice "${Arg}" in both up
+	    ;;
+	*.input)
+	    pollarg "${Arg}"
+	    setdevice "${Arg}" in both
+	    ;;
+	*.output)
+	    setdevice "${Arg}" out
+	    ;;
+	esac
+    done
+    
+    cd "${MyDir}/run.d"
+    poll ${PollArg} | ${NodeCmd} "${MyDir}/node_modules/${Me}.js" "${MyDir}/run.d"
+}
+
+
+
+# cmd_start
+# Start daemon
+#
+cmd_start() {
+    session -watchcmd "$0 cleanup ${RestartDelay:-5}" "${PGIDFile}" "$0" run >> "${LogFile}" 2>&1
+}
+
+
+
+# cmd_status
+# Status of daemon
+# If running gives a list of the processes, otherwise says, "Not running"
+#
+cmd_status() {
+    session -status "${PGIDFile}" || {
+	echo "Not running"
+	return 1
+    }
+}
+
+
+
+# cmd_stop
+# Stop daemon
+#
+cmd_stop() {
+    session -kill -sigint "${PGIDFile}" 
+    sleep 1
+    session -kill "${PGIDFile}"
+    cmd_cleanup
+}
+
+
+
+# cmd_cleanup
+# Set GPIO outputs to 0
+#
+cmd_cleanup() {
+    echo "${Me}: cleanup"
+
+    local Arg
+    for Arg in ${Platform}/*.output; do
+        echo "0" > ${Arg}
+    done
+
+    [ -n "$1" ] && {
+        sleep ${1}
+        echo "${Me}: respawn"
+    }
+}
+
+
+
+# cmd_reboot
+# reboot the Pi
+#
+cmd_reboot() {
+    sudo shutdown -r now
+}
+
+# cmd_halt
+# halt the Pi
+#
+cmd_halt() {
+    sudo halt
+}
+
+
+
+# cmd_setup
+# set up the Pi
+#
+cmd_setup() {
+    local Src="$1"
+    shift
+    [ -n "${Src}" ] || {
+	err "No source"
+    }
+
+    local Hostname="$1"
+    shift
+    [ -n "${Hostname}" ] && {
+	mkdir -p "${MyDir}/logs"
+	mkdir "${HOME}/bin"
+
+	sudo sed -i "s/$(hostname)/${Hostname}/" /etc/hosts /etc/hostname
+	passwd
+    }
+
+    local CopyCmd="rsync --archive --verbose --delete"
+    ${CopyCmd} ${Src}/bin/* ~/bin/
+    ${CopyCmd} "${Src}/node_modules" "${MyDir}/"
+    ${CopyCmd} "${Src}/platform-production/" "${MyDir}/platform"
+    ${CopyCmd} "${Src}/run.d" "${MyDir}/"
+
+    sudo cp --preserve=mode,timestamps "${Src}/etc/rc.local" "/etc/rc.local"
+    sudo chown root:root /etc/rc.local
+    sudo cp --preserve=timestamps "${Src}/boot/config.txt" "/boot/config.txt"
+}
+
+
+
+# test
+# test code
+#
+cmd_test() {
+    echo testing...
+}
+
+
+
+# main
+
+[ "X$1" = "X--test" ] && {
+    Tst=echo
+    shift
+}
+
+[ "$#" -eq 0 ] && err "See $(basename $0) help for details"
+
+Cmd="$1"
+shift
+
+"cmd_${Cmd}" "$@"

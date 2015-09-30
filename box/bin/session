@@ -1,0 +1,341 @@
+#!/bin/bash
+# Session
+#
+# Copyright Tarim 2013,2014,2015
+#
+# Session is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Session is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with Session.  If not, see <http://www.gnu.org/licenses/>.
+
+#
+# Documentation
+#
+
+Date="June 2015"
+Author="Tarim"
+
+usage() {
+    echo "  ${Me} [-user USER] [-watchdog [DELAY] | -watchcmd WATCHCOMMAND | -cleanup] FILE COMMAND"
+    echo "  ${Me} [-user USER] [-kill [-SIGNAL]] FILE"
+    echo "  ${Me} [-help | -man | -html]"
+}
+
+document() {
+    cat <<EOF
+
+NAME
+====
+
+  __${Me}__ ---- run a command with its own session id
+
+
+SYNOPSIS
+========
+
+  __${Me}__ [_OPTIONS_] _FILE_ _COMMAND_
+
+  __${Me}__ [_OPTIONS_] __-kill__ [_-SIGNAL_] _FILE_
+
+  __${Me}__ [__-status__] _FILE_
+
+  __${Me}__ [__-help__|__-man__|__-html__]
+
+
+DESCRIPTION
+===========
+
+  __${Me}__ is a lightweight daemon controller.
+  _COMMAND_ is run under a new session id which is written to FILE.
+  The _COMMAND_, along with any processes it spawned, can be terminated with the __-kill__ option.
+
+  _COMMAND_ may be run with a watchdog so that, if it dies, it can be automatically restarted after a delay.  Alternatively a watchdog command may be run before restart.
+
+  Session ids are sometimes, confusingly, referred to as process group ids (particularly by __ps__).  Any process spawned will have the same session id as its parent unless it is specifically changed.  Thus, any process spawned can be easily identified even if its original parent has terminated.
+
+
+OPTIONS
+=======
+
+  Most options may be preceded by __-__ or __--__.
+  _COMMAND_ can be multiple arguments.
+
+
+##      __-k__, __-kill__ [_-SIGNAL_]
+
+  Terminates all processes with the session id specified in _FILE_ and removes _FILE_.
+  With _-SIGNAL_, sends each process that signal instead of __SIGTERM__ but doesn't remove _FILE_.
+  Thus, it is possible to do:
+
+    ${Me} -k -SIGINT /tmp/mydaemon.pgid
+    sleep 2
+    ${Me} -k /tmp/mydaemon.pgid
+
+
+##      __-status__
+
+  Lists all processes with that session id.
+
+
+##      __-cleanup__
+
+  If _COMMAND_ terminates then attempted to kill all other process with the same session id.
+  Note that the default is not to terminate other session id processes when the initial _COMMAND_ terminates.
+
+
+##      __-watchdog__ [_DELAY_]
+
+  If _COMMAND_ terminates for any reason, wait for _DELAY_ (default 5) seconds and respawn the _COMMAND_.
+  Implies __-cleanup__.
+
+
+##      __-watchcmd__ _WATCHCOMMAND_
+
+  Instead waiting for DELAY seconds; execute _WATCHCOMMAND_.
+  Implies __-cleanup__.
+  _WATCHCOMMAND_ must be a single or quoted argument.
+  It will be called with arguments of _FILE_ and _COMMAND_.
+
+
+##      __-user__ _USER_
+
+  Run the command as this user.
+  If given, this must be the first option.
+  Maybe useful when calling ${Me} from rc.local (which is run as root).
+
+
+##      __-help__, __-man__, __-html__
+
+  Gives this documentation in text, man or html format.
+
+
+FILES
+=====
+  FILE is the file that ${Me} keeps the session id of the _COMMAND_ in.
+  Most usefully kept in a directory, such as __/tmp__, which will not remain over reboots.
+
+
+CAVEATS
+=======
+  Option processing is somewhat picky.
+  Specifying more than one of __-watchdog__, __-watchcmd__, __-cleanup__ will give somewhat confusing error messages.
+  If specified, __-user__ must come first and will tend to trash quoted arguments.
+
+
+AUTHOR
+======
+  Written by ${Author}.
+  Error reports to <session-cmd@mediaplaygrounds.co.uk>.
+
+
+SEE ALSO
+========
+  __pkill__(1), __setsid__(1), __signal__(7)
+
+EOF
+}
+
+
+
+#
+# Error routine
+#
+err() {
+    echo "$@" >&2
+    exit 2
+}
+
+#
+# Check not more than two arguments
+#
+arg_check() {
+    [ $# -gt 2 ] && err "${Me} $1: Too many arguments"
+}
+
+#
+# Set PGID to the session group id
+#
+set_pgid() {
+    PGID=$(cat "$1" 2>/dev/null)
+    [ -n "${PGID}" ]
+}
+
+#
+# Internal watchdog command
+#
+watchdog_cmd() {
+    local WatchdogDelay="$1"
+    shift
+    shift
+
+    echo "${Me} exit: $@" >&2
+    sleep "${WatchdogDelay}"
+    echo "${Me} respawn: $@" >&2
+}
+
+
+
+#
+# Start a command
+#
+session_start() {
+    touch "$1" &&
+    setsid "$0" --exec "$@"
+}
+
+#
+# Internaly execute command with new session id
+#
+session_exec() {
+    local File="$1"
+    shift
+    echo "$$" > "${File}"
+
+    if [ -n "${SessionWatchdogCmd}" ]; then
+        local PID
+        export -n SessionWatchdogCmd
+        while :; do
+            "$@"
+            set_pgid "${File}" && for PID in $( pgrep -g ${PGID} ); do
+                [ "${PID}" = "${BASHPID}" ] || kill "${PID}"
+            done
+            ${SessionWatchdogCmd}
+        done <&0 &
+
+    else
+        "$@" <&0 &
+    fi
+}
+
+
+
+#
+# Stop a running command
+#
+session_stop() {
+    set_pgid "$1" && pkill ${Signal} -g ${PGID}
+    local Code="$?"
+
+    [ -n "${Signal}" ] || rm -f "$1"
+    return "${Code}"
+}
+
+
+
+#
+# Status
+#
+session_status() {
+    set_pgid "$1" && pgrep -lg ${PGID}
+}
+
+
+
+
+
+#
+# main
+#
+Me=$(basename $0)
+
+[ "$#" = "0" ] && {
+    echo "Usage:"
+    usage
+    exit 0
+}
+
+case "$1" in
+    --user | -user)
+        shift
+        User="$1"
+        shift
+        exec su -c "$0 $*" "${User}"
+        exit $?
+        ;;
+
+    --stop | -stop | --kill | -kill | -k)
+        case "$2" in
+        -*)
+            Signal="$2"
+            shift
+            ;;
+        esac
+
+        arg_check "$@"
+        session_stop "$2"
+        exit $?
+        ;;
+
+    --status | -status)
+        arg_check "$@"
+        session_status "$2"
+        exit $?
+        ;;
+
+    --exec | -exec)
+        shift
+        session_exec "$@"
+        exit $?
+        ;;
+
+    --watchdog | -watchdog)
+        shift
+        case "$1" in
+        [0-9]*)
+            WatchdogDelay="$1"
+            shift
+            ;;
+        esac
+        export SessionWatchdogCmd="watchdog_cmd ${WatchdogDelay:-5} $@"
+        ;;
+
+    --watchcmd | -watchcmd)
+        shift
+        export SessionWatchdogCmd="$@"
+        shift
+        ;;
+
+    --cleanup | -cleanup)
+        shift
+        export SessionWatchdogCmd="$0 -kill $1"
+        ;;
+
+    --help | -help)
+        document | tr -d '_#'
+        exit 0
+        ;;
+
+    --man | -man)
+        echo -n ".TH ${Me} 1 " | tr 'a-z' 'A-Z'
+        echo "\"${Date}\" \"${Author}\" \"User Commands\""
+        echo ".nh"
+        echo ".ad l"
+        document | pandoc --to=man |
+        sed '
+            s/\\\[em\]/--/g;
+            s/---/\\-/g;
+        '
+        exit 0
+        ;;
+
+    --html | -html)
+        document | pandoc --to=html --standalone --title-prefix="${Me}" --base-header-level=2
+        exit 0
+        ;;
+esac
+
+if [ -n "$2" ]; then
+    session_stop "$1"
+    session_start "$@"
+
+else
+    session_status "$1"
+fi

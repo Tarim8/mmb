@@ -116,9 +116,9 @@ cmd_run() {
 	err "Node not installed"
     fi
 
-    for Arg in ${Platform}/*.output --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
+    for Arg in ${Platform}/*.output '+%l\n' ${Platform}/*.pipe --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
 	case "${Arg}" in
-	-* | +* | [0-9]* | \\*)
+	-* | +* | [0-9]* | \\* | *.pipe)
 	    PollArg="${PollArg} ${Arg}"
 	    ;;
 	'*')
@@ -200,6 +200,20 @@ cmd_cleanup() {
     [ -n "$1" ] && {
         sleep ${1}
         echo "${Me}: respawn"
+    }
+}
+
+
+
+# cmd_command
+# Sends a command to the command pipe
+# e.g. box command usbmount
+#
+cmd_command() {
+    local Pipe="${Platform}/command.pipe"
+
+    [ -w "${Pipe}" ] && {
+        echo "${1}" > "${Pipe}"
     }
 }
 

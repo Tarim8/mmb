@@ -1,0 +1,3 @@
+mountDir=/tmp/
+backupDir=trovebackup
+copyDir=troveupdate

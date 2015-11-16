@@ -1,3 +1,3 @@
 mountDir=/media/usb/
 backupDir=trovebackup
-updateDir=troveupdate
+copyDir=troveupdate

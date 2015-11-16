@@ -10,3 +10,6 @@ iface default inet dhcp
 
 allow-hotplug eth1
 iface eth1 inet dhcp
+
+allow-hotplug usb0
+iface usb0 inet dhcp

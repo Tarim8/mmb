@@ -113,7 +113,7 @@ note() {
 # Create a reverse ssh connection
 #
 [ -n "${ConnectCmd}" ] || {
-    ConnectCmd="ssh -nN -k -o ServerAliveInterval=250 -R${ConnectPort}:localhost:22 ${ConnectLogin}"
+    ConnectCmd="ssh -nN -k -o ServerAliveInterval=${ConnectTime} -R${ConnectPort}:localhost:22 ${ConnectLogin}"
 }
 
 connect() {

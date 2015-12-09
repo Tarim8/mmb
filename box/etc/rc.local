@@ -17,10 +17,7 @@ if [ "$_IP" ]; then
   printf "My IP address is %s\n" "$_IP"
 fi
 
-ifconfig -s | egrep -q '^wlan0|^eth1' &&
-[ -r /root/.ssh/id_rsa ] && {
-    /usr/local/bin/monitor /etc/monitor.conf &
-}
+/usr/local/bin/monitor /etc/monitor.conf &
 
 dmesg | grep -qi keyboard || {
     su -lc "box start" pi

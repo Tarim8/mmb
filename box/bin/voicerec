@@ -27,9 +27,9 @@ RecHeader="${Prefix}header.wav"
 RecTrim="${Prefix}trim.wav"
 
 MinTime=1.0
-SilenceGap=".1"
-SilenceThreshold="2%"
 GainDB="-0.1"
+#SilenceGap=".1"
+#SilenceThreshold="2%"
 #NoiseReduction="0.3"
 
 while [ "$#" -gt 0 ]; do
@@ -79,13 +79,21 @@ wait "${RecPID}"
 }
 
 sox "${RecRaw}" "${RecHeader}"
-sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"
 
-Duration=$( soxi -D "${RecTrim}" )
-Silence=$( echo $( soxi -D "${RecHeader}" )-${Duration}-0.1 | bc -l )
-[ $( echo "${Silence}<0.5" | bc -l )"" = "1" ] && {
+if [ -n "${SilenceGap}" ]; then
+    sox "${RecRaw}" "${RecTrim}" silence 1 "${SilenceGap}" "${SilenceThreshold}"
+
+    Duration=$( soxi -D "${RecTrim}" )
+    Silence=$( echo $( soxi -D "${RecHeader}" )-${Duration}-0.1 | bc -l )
+    [ $( echo "${Silence}<0.5" | bc -l )"" = "1" ] && {
+        Silence=""
+    }
+
+else
+    RecTrim="${RecHeader}"
+    Duration=$( soxi -D "${RecTrim}" )
     Silence=""
-}
+fi
 
 [ $( echo "${Duration}<${MinTime}" | bc -l )"" = "1" ] && {
     echo "Sound too short: ${Duration}" 1>&2

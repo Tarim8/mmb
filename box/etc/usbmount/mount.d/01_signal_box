@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/home/pi/bin/box command usbmount

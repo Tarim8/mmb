@@ -25,6 +25,7 @@ PGIDFile="/tmp/${Me}.pgid"
 MyDir="/home/pi/${Me}"
 Platform="${MyDir}/run.d/platform"
 LogFile="${Platform}/${Me}.log"
+CommandPipe="/tmp/${Me}.pipe"
 
 
 
@@ -116,9 +117,11 @@ cmd_run() {
 	err "Node not installed"
     fi
 
-    for Arg in ${Platform}/*.output --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
+    rm -f "${CommandPipe}"
+    mkfifo "${CommandPipe}"
+    for Arg in ${Platform}/*.output '+%l\n' ${CommandPipe} --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
 	case "${Arg}" in
-	-* | +* | [0-9]* | \\*)
+	-* | +* | [0-9]* | \\* | *.pipe)
 	    PollArg="${PollArg} ${Arg}"
 	    ;;
 	'*')
@@ -201,6 +204,19 @@ cmd_cleanup() {
         sleep ${1}
         echo "${Me}: respawn"
     }
+}
+
+
+
+# cmd_command
+# Sends a command to the command pipe
+#
+cmd_command() {
+    if [ -w "${CommandPipe}" ]; then
+        echo "${1}" > "${CommandPipe}"
+    else
+        err "No command pipe: ${CommandPipe}"
+    fi
 }
 
 

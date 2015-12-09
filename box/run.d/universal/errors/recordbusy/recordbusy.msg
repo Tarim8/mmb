@@ -1,1 +1,1 @@
-Previous recording is still being updated
+Record glitch, please try again

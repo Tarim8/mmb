@@ -1,3 +1,5 @@
-mountDir=/tmp/
-backupDir=trovebackup
-copyDir=troveupdate
+mountDir=/tmp/usb/
+backupDir=musicmemorybox/backup
+noBackup=musicmemorybox/nobackup
+addDir=musicmemorybox/add
+restoreDir=musicmemorybox/restore

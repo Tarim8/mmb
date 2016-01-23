@@ -1,3 +1,5 @@
 mountDir=/media/usb/
-backupDir=mmbbackup
-updateDir=mmbupdate
+backupDir=musicmemorybox/backup
+noBackup=musicmemorybox/nobackup
+addDir=musicmemorybox/add
+restoreDir=musicmemorybox/restore

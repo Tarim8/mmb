@@ -213,7 +213,7 @@ cmd_cleanup() {
 #
 cmd_command() {
     if [ -w "${CommandPipe}" ]; then
-        echo "${1}" > "${CommandPipe}"
+        echo "${*}" > "${CommandPipe}"
     else
         err "No command pipe: ${CommandPipe}"
     fi

@@ -1,0 +1,8 @@
+# platform can be pi or dev
+platform pi
+
+# product can be trove or mmb
+product trove
+
+# name of host for ethernet connections
+hostname testbox

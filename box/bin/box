@@ -22,7 +22,7 @@ shopt -s nullglob
 Me=$(basename $0)
 
 PGIDFile="/tmp/${Me}.pgid"
-MyDir="/home/pi/${Me}"
+MyDir="${HOME}/${Me}"
 RunDir="${MyDir}/run.d"
 Platform="${RunDir}/platform"
 LogFile="${Platform}/${Me}.log"
@@ -51,9 +51,12 @@ setdevice() {
     $OnlyEcho hwctl export "${GPIO}" "$@"
 }
 
+# setlink LINK_PATH TAG
+# sets a link LINK to point to LINK_PATH-TAG
+#
 setlink() {
-    local Link="${1}"
-    local Target="${1}-${2}"
+    local Link="$1"
+    local Target=$(basename "$1")-$2
 
     local OldTarget=$(readlink "${Link}")
     [ "${OldTarget}" = "${Target}" ] || {
@@ -69,26 +72,6 @@ setlink() {
 cmd_run() {
     local Arg
     local NodeCmd
-
-    local Config="/boot/boxcfg.txt"
-    local Key
-    local Value
-
-    [ -r "${Config}" ] && tr -d '\015' < "${Config}" |
-    while read Key Value; do
-        case "${Key}" in
-        "" | "#"*)
-            ;;
-
-        product | platform)
-            setlink "${RunDir}/${Key}" "${Value}"
-            ;;
-
-        hostname)
-            cmd_sethost "${Value}"
-            ;;
-        esac
-    done
 
     if executable node; then
 	NodeCmd=node
@@ -140,6 +123,26 @@ cmd_run() {
 # Start daemon
 #
 cmd_start() {
+    local Config="/boot/boxcfg.txt"
+    local Key
+    local Value
+
+    [ -r "${Config}" ] && tr -d '\015' < "${Config}" |
+    while read Key Value; do
+        case "${Key}" in
+        "" | "#"*)
+            ;;
+
+        product | platform)
+            setlink "${RunDir}/${Key}" "${Value}"
+            ;;
+
+        hostname)
+            cmd_sethost "${Value}"
+            ;;
+        esac
+    done
+
     session -watchcmd "$0 cleanup ${RestartDelay:-5}" "${PGIDFile}" "$0" run >> "${LogFile}" 2>&1
 }
 

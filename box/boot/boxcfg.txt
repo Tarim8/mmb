@@ -5,4 +5,4 @@ platform pi
 product trove
 
 # name of host for ethernet connections
-hostname testbox
+hostname meineckbox

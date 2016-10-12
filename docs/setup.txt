@@ -1,0 +1,25 @@
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install sox libsox-fmt-all festival usbmount bc nodejs git
+sudo raspi-config 
+echo raspi-config internationalisation timezone europe london, advanced serial off
+mkdir -p bin box/logs box/collection projects/trove .ssh
+vim.tiny .ssh/config
+cd projects/trove/
+git clone meineck:repos/trove/git
+cd git/
+git checkout wip
+git config --global alias.graph "log --graph --all --oneline --decorate --color"
+git config --global user.email git@mediaplaygrounds.co.uk
+git config --global user.name Tarim
+cd box/wiring/
+./build 
+ln -s ~/projects/trove/git/box/bin/* ~/bin
+ln -s ~/projects/trove/git/box/run.d/ .
+ln -s ~/projects/trove/git/box/node_modules/ box/
+cd ..
+sudo cp boot/* /boot/
+sudo cp etc/rc.local /etc/rc.local
+sudo cp -r etc/usbmount/* /etc/usbmount/
+sudo reboot
+box start

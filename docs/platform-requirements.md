@@ -13,7 +13,7 @@ embedded Linux system with the following features:
      Separate from any USB audio port.  
 
 * Node JS  
-    Current version 0.10.22.  
+    Current version 0.10.29.  
     Soon to be upgraded to Node JS v4 LTS. 
 
 * Sox  

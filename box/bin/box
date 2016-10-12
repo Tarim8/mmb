@@ -143,6 +143,7 @@ cmd_start() {
         esac
     done
 
+    echo $( date "+%F %T " ) $( ls -l "${RunDir}/product" ) >> "${LogFile}"
     session -watchcmd "$0 cleanup ${RestartDelay:-5}" "${PGIDFile}" "$0" run >> "${LogFile}" 2>&1
 }
 
@@ -202,6 +203,19 @@ cmd_command() {
         err "No command pipe: ${CommandPipe}"
     fi
 }
+
+
+
+# cmd_log
+# reveal the log file
+#
+cmd_log() {
+    if [ -c ${LogFile} ]; then
+        err "Log file is terminal"
+    fi
+    tail -f "${LogFile}"
+}
+
 
 
 

@@ -62,7 +62,9 @@ setlink() {
     [ "${OldTarget}" = "${Target}" ] || {
         rm -f "${Link}" &&
         ln -sf "${Target}" "${Link}"
+        return 0
     }
+    return 1
 }
 
 
@@ -138,7 +140,11 @@ cmd_start() {
             ;;
 
         hostname)
-            cmd_sethost "${Value}"
+            cmd_sethost "${Value}" && {
+                echo "Reboot with new hostname ${Value}" >> "${LogFile}"
+                sudo raspi-config --expand-rootfs >> "${LogFile}" 2>&1
+                sudo reboot
+            }
             ;;
         esac
     done

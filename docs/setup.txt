@@ -1,3 +1,4 @@
+Pi:
 sudo apt-get update
 sudo apt-get upgrade
 sudo apt-get install sox libsox-fmt-all festival usbmount bc nodejs git
@@ -19,7 +20,16 @@ ln -s ~/projects/trove/git/box/run.d/ .
 ln -s ~/projects/trove/git/box/node_modules/ box/
 cd ..
 sudo cp boot/* /boot/
+vim.tiny /boot/config.txt (remove uart=0)
 sudo cp etc/rc.local /etc/rc.local
 sudo cp -r etc/usbmount/* /etc/usbmount/
+alsamixer (increase volume on default and USB sound card)
 sudo reboot
-box start
+
+Linux:
+sudo mount -v -o offset=4194304 -t vfat box.img /mnt/boxboot/
+sudo mount -v -o offset=70254592 -t ext4 box.img /mnt/boxroot/
+sudo losetup --offset 70254592 /dev/loop0 box.img 
+sudo e2fsck -f /dev/loop0 
+sudo resize2fs /dev/loop0 322048
+sudo losetup -d /dev/loop0

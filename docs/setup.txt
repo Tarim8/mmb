@@ -27,9 +27,20 @@ alsamixer (increase volume on default and USB sound card)
 sudo reboot
 
 Linux:
-sudo mount -v -o offset=4194304 -t vfat box.img /mnt/boxboot/
-sudo mount -v -o offset=70254592 -t ext4 box.img /mnt/boxroot/
 sudo losetup --offset 70254592 /dev/loop0 box.img 
 sudo e2fsck -f /dev/loop0 
 sudo resize2fs /dev/loop0 322048
 sudo losetup -d /dev/loop0
+sudo mount -v -o offset=70254592 -t ext4 box.img /mnt/boxroot/
+sudo vim.tiny /mnt/boxroot/etc/hostname /mnt/boxroot/etc/hosts    # meineckbox
+sudo truncate -s 0 /mnt/boxroot/home/pi/box/logs/box.log
+sudo truncate -s 0 /mnt/boxroot/home/pi/.bash_history
+sudo rm -rf /mnt/boxroot/home/pi/box/collection/*
+sudo rm -rf /mnt/boxroot/home/pi/projects/trove/git/.git
+sudo umount /mnt/boxroot
+
+sudo mount -v -o offset=4194304 -t vfat box.img /mnt/boxboot/
+sudo vim.tiny /mnt/boxboot/boxcfg.txt   # meineckbox
+sudo umount /mnt/boxboot
+
+

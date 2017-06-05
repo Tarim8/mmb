@@ -2,7 +2,7 @@
 
 # Start and stop Box daemon
 #
-# Copyright Tarim 2013,2014,2015
+# Copyright Tarim 2013,2014,2015,2016
 #
 # Box is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -22,60 +22,11 @@ shopt -s nullglob
 Me=$(basename $0)
 
 PGIDFile="/tmp/${Me}.pgid"
-MyDir="/home/pi/${Me}"
-Platform="${MyDir}/run.d/platform"
+MyDir="${HOME}/${Me}"
+RunDir="${MyDir}/run.d"
+Platform="${RunDir}/platform"
 LogFile="${Platform}/${Me}.log"
 CommandPipe="/tmp/${Me}.pipe"
-
-
-
-# err
-# echo an error and exit
-err() {
-    echo "$*" 1>&2
-    exit 1
-}
-
-# executable PROGRAM
-# check if it's runable
-executable() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# cmd_help [COMMAND [all]]
-# Help
-#
-cmd_help() {
-    case "$1" in
-    "")
-	StartPattern="/^# ${Prefix}/"
-	EndPattern=""
-	;;
-    "all")
-	StartPattern="/^# ${Prefix}/"
-	EndPattern=",/^${Prefix}/"
-	;;
-    *)
-	StartPattern="/^# ${Prefix}$1 /"
-	EndPattern=",/^${Prefix}/"
-	;;
-    esac
-
-    awk -v me="$(basename $0) " -v spacer="  " "
-	${StartPattern}${EndPattern} {
-	    if( sub( /^# ?/, spacer ) ) {
-		found=1
-		sub( /^ *${Prefix}/, me )
-		print
-	    }
-	}
-	END {
-	    if( !found ) exit(2)
-	}
-    " < "$0" || {
-	err "No help topic"
-    }
-}
 
 
 
@@ -100,15 +51,30 @@ setdevice() {
     $OnlyEcho hwctl export "${GPIO}" "$@"
 }
 
+# setlink LINK_PATH TAG
+# sets a link LINK to point to LINK_PATH-TAG
+#
+setlink() {
+    local Link="$1"
+    local Target=$(basename "$1")-$2
+
+    local OldTarget=$(readlink "${Link}")
+    [ "${OldTarget}" = "${Target}" ] || {
+        rm -f "${Link}" &&
+        ln -sf "${Target}" "${Link}"
+        return 0
+    }
+    return 1
+}
 
 
-# cmd_run
-# Run daemon
+# run
+# Run daemon - used by start
 #
 cmd_run() {
     local Arg
     local NodeCmd
-    
+
     if executable node; then
 	NodeCmd=node
     elif executable nodejs; then
@@ -124,7 +90,7 @@ cmd_run() {
 	-* | +* | [0-9]* | \\* | *.pipe)
 	    PollArg="${PollArg} ${Arg}"
 	    ;;
-	'*')
+	*'*'*)
 	    ;;
 	*.pserial)
 	    pollarg "${Arg}"
@@ -148,9 +114,9 @@ cmd_run() {
 	    ;;
 	esac
     done
-    
-    cd "${MyDir}/run.d"
-    poll ${PollArg} | ${NodeCmd} "${MyDir}/node_modules/${Me}.js" "${MyDir}/run.d"
+
+    cd "${RunDir}"
+    poll ${PollArg} | ${NodeCmd} "${MyDir}/node_modules/${Me}.js" "${RunDir}"
 }
 
 
@@ -159,6 +125,31 @@ cmd_run() {
 # Start daemon
 #
 cmd_start() {
+    local Config="/boot/boxcfg.txt"
+    local Key
+    local Value
+
+    [ -r "${Config}" ] && tr -d '\015' < "${Config}" |
+    while read Key Value; do
+        case "${Key}" in
+        "" | "#"*)
+            ;;
+
+        product | platform)
+            setlink "${RunDir}/${Key}" "${Value}"
+            ;;
+
+        hostname)
+            cmd_sethost "${Value}" && {
+                echo "Reboot with new hostname ${Value}" >> "${LogFile}"
+                sudo raspi-config --expand-rootfs >> "${LogFile}" 2>&1
+                sudo reboot
+            }
+            ;;
+        esac
+    done
+
+    echo $( date "+%F %T " ) $( ls -l "${RunDir}/product" ) >> "${LogFile}"
     session -watchcmd "$0 cleanup ${RestartDelay:-5}" "${PGIDFile}" "$0" run >> "${LogFile}" 2>&1
 }
 
@@ -181,7 +172,7 @@ cmd_status() {
 # Stop daemon
 #
 cmd_stop() {
-    session -kill -sigint "${PGIDFile}" 
+    session -kill -sigint "${PGIDFile}"
     sleep 1
     session -kill "${PGIDFile}"
     cmd_cleanup
@@ -189,8 +180,8 @@ cmd_stop() {
 
 
 
-# cmd_cleanup
-# Set GPIO outputs to 0
+# cmd_cleanup [TIME]
+# Set any GPIO outputs to 0, echo respawn message
 #
 cmd_cleanup() {
     echo "${Me}: cleanup"
@@ -208,7 +199,7 @@ cmd_cleanup() {
 
 
 
-# cmd_command
+# cmd_command [COMMAND]
 # Sends a command to the command pipe
 #
 cmd_command() {
@@ -221,15 +212,28 @@ cmd_command() {
 
 
 
+# cmd_log
+# reveal the log file
+#
+cmd_log() {
+    if [ -c ${LogFile} ]; then
+        err "Log file is terminal"
+    fi
+    tail -f "${LogFile}"
+}
+
+
+
+
 # cmd_reboot
-# reboot the Pi
+# Reboot the server
 #
 cmd_reboot() {
     sudo shutdown -r now
 }
 
 # cmd_halt
-# halt the Pi
+# Halt the server
 #
 cmd_halt() {
     sudo halt
@@ -237,8 +241,20 @@ cmd_halt() {
 
 
 
+# cmd_sethost HOSTNAME
+# Set the hostname if it is different from the current name
+#
+cmd_sethost() {
+    local Hostname="$1"
+    [ "$(hostname)" = "${Hostname}" ] || {
+	sudo sed -i "s/$(hostname)/${Hostname}/" /etc/hosts /etc/hostname
+        return 0
+    }
+    return 1
+}
+    
 # cmd_setup
-# set up the Pi
+# Set up the server
 #
 cmd_setup() {
     local Src="$1"
@@ -247,25 +263,21 @@ cmd_setup() {
 	err "No source"
     }
 
-    local Hostname="$1"
-    shift
-    [ -n "${Hostname}" ] && {
-	mkdir -p "${MyDir}/logs"
-	mkdir "${HOME}/bin"
-
-	sudo sed -i "s/$(hostname)/${Hostname}/" /etc/hosts /etc/hostname
+    cmd_sethost "${1}" && {
 	passwd
     }
+
+    mkdir -p "${MyDir}/logs"
+    mkdir "${HOME}/bin"
 
     local CopyCmd="rsync --archive --verbose --delete"
     ${CopyCmd} ${Src}/bin/* ~/bin/
     ${CopyCmd} "${Src}/node_modules" "${MyDir}/"
-    ${CopyCmd} "${Src}/platform-production/" "${MyDir}/platform"
     ${CopyCmd} "${Src}/run.d" "${MyDir}/"
 
     sudo cp --preserve=mode,timestamps "${Src}/etc/rc.local" "/etc/rc.local"
     sudo chown root:root /etc/rc.local
-    sudo cp --preserve=timestamps "${Src}/boot/config.txt" "/boot/config.txt"
+    sudo cp --preserve=timestamps "${Src}/boot/"* "/boot/"
 }
 
 
@@ -278,11 +290,59 @@ cmd_test() {
 }
 
 
+# err
+# echo an error and exit
+err() {
+    echo "$*" 1>&2
+    exit 1
+}
+
+# executable PROGRAM
+# check if it's runable
+executable() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# cmd_help [COMMAND | all]
+# Help
+#
+cmd_help() {
+    local Pattern
+    case "$1" in
+    "")
+	Pattern="/^# ${Prefix}/"
+	;;
+    "all")
+	Pattern="/^# ${Prefix}/,/^${Prefix}/"
+	;;
+    *)
+	Pattern="/^# ${Prefix}$1/,/^${Prefix}/"
+	;;
+    esac
+
+    awk -v me="$(basename $0) " -v spacer="  " "
+	${Pattern} {
+	    if( sub( /^# ?/, spacer ) ) {
+		found=1
+		sub( /^ *${Prefix}/, me )
+		print
+	    }
+	}
+	END {
+	    if( !found ) exit(2)
+	}
+    " < "$0" || {
+	err "No help topic"
+    }
+}
+
+
+
 
 # main
 
 [ "X$1" = "X--test" ] && {
-    Tst=echo
+    Test=echo
     shift
 }
 

@@ -1,0 +1,5 @@
+mountDir=trove
+backupDir=backup
+noBackup=nobackup
+addDir=add
+restoreDir=restore

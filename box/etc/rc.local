@@ -17,8 +17,6 @@ if [ "$_IP" ]; then
   printf "My IP address is %s\n" "$_IP"
 fi
 
-/usr/local/bin/monitor /etc/monitor.conf &
-
 dmesg | grep -qi keyboard || {
     su -lc "box start" pi
 }

@@ -1,5 +1,0 @@
-mountDir=/media/usb/
-backupDir=trove/backup
-noBackup=trove/nobackup
-addDir=trove/add
-restoreDir=trove/restore

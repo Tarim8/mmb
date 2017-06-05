@@ -20,18 +20,19 @@
 # Documentation
 #
 
+Version="1.0"
 Date="June 2015"
 Author="Tarim"
 
 usage() {
+    echo "Usage:"
     echo "  ${Me} [-user USER] [-watchdog [DELAY] | -watchcmd WATCHCOMMAND | -cleanup] FILE COMMAND"
     echo "  ${Me} [-user USER] [-kill [-SIGNAL]] FILE"
-    echo "  ${Me} [-help | -man | -html]"
+    echo "  ${Me} [-help | -man | -html | -version]"
 }
 
 document() {
     cat <<EOF
-
 NAME
 ====
 
@@ -47,7 +48,7 @@ SYNOPSIS
 
   __${Me}__ [__-status__] _FILE_
 
-  __${Me}__ [__-help__|__-man__|__-html__]
+  __${Me}__ [__-help__|__-man__|__-html__|__-version__]
 
 
 DESCRIPTION
@@ -143,6 +144,41 @@ SEE ALSO
 EOF
 }
 
+#
+# generate help document
+#
+gendoc() {
+    local Type="${1//-}"
+    local Title=$(echo "${Me}" | tr 'a-z' 'A-Z')
+    local Section=1
+    local SectionName="User Commands"
+    local PostSed=' s/----/-/g '
+    local HeaderLevel=1
+
+    case "${Type}" in
+    man)
+        PostSed=' s/\\\[em\]/--/g; s/---/\\-/g '
+        echo ".nh"
+        echo ".ad l"
+        ;;
+
+    html)
+        HeaderLevel=2
+        ;;
+    esac
+
+    document |
+    pandoc --to="${Type}" --standalone \
+        -V title="${Title}" \
+        -V section="${Section}" \
+        -V date="${Date}" \
+        -V description="\"${Author}\" \"${SectionName}\"" \
+        --title-prefix="${Title}" \
+        -V pagetitle="${SectionName}" \
+        --base-header-level="${HeaderLevel}" \
+    | sed "${PostSed}"
+}
+
 
 
 #
@@ -157,7 +193,10 @@ err() {
 # Check not more than two arguments
 #
 arg_check() {
-    [ $# -gt 2 ] && err "${Me} $1: Too many arguments"
+    [ $# -gt 2 ] && {
+        usage >&2
+        exit 1
+    }
 }
 
 #
@@ -247,7 +286,6 @@ session_status() {
 Me=$(basename $0)
 
 [ "$#" = "0" ] && {
-    echo "Usage:"
     usage
     exit 0
 }
@@ -313,22 +351,19 @@ case "$1" in
         exit 0
         ;;
 
-    --man | -man)
-        echo -n ".TH ${Me} 1 " | tr 'a-z' 'A-Z'
-        echo "\"${Date}\" \"${Author}\" \"User Commands\""
-        echo ".nh"
-        echo ".ad l"
-        document | pandoc --to=man |
-        sed '
-            s/\\\[em\]/--/g;
-            s/---/\\-/g;
-        '
+    --man | -man | --html | -html)
+        gendoc "$1"
         exit 0
         ;;
 
-    --html | -html)
-        document | pandoc --to=html --standalone --title-prefix="${Me}" --base-header-level=2
+    --version | -version)
+        echo "Version ${Version}"
         exit 0
+        ;;
+
+    -*)
+        usage >&2
+        exit 1
         ;;
 esac
 

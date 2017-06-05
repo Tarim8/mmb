@@ -1,0 +1,35 @@
+Pi:
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install sox libsox-fmt-all festival usbmount bc nodejs git
+sudo raspi-config 
+echo raspi-config internationalisation timezone europe london, advanced serial off
+mkdir -p bin box/logs box/collection projects/trove .ssh
+vim.tiny .ssh/config
+cd projects/trove/
+git clone meineck:repos/trove/git
+cd git/
+git checkout wip
+git config --global alias.graph "log --graph --all --oneline --decorate --color"
+git config --global user.email git@mediaplaygrounds.co.uk
+git config --global user.name Tarim
+cd box/wiring/
+./build 
+ln -s ~/projects/trove/git/box/bin/* ~/bin
+ln -s ~/projects/trove/git/box/run.d/ .
+ln -s ~/projects/trove/git/box/node_modules/ box/
+cd ..
+sudo cp boot/* /boot/
+vim.tiny /boot/config.txt (remove uart=0)
+sudo cp etc/rc.local /etc/rc.local
+sudo cp -r etc/usbmount/* /etc/usbmount/
+alsamixer (increase volume on default and USB sound card)
+sudo reboot
+
+Linux:
+sudo mount -v -o offset=4194304 -t vfat box.img /mnt/boxboot/
+sudo mount -v -o offset=70254592 -t ext4 box.img /mnt/boxroot/
+sudo losetup --offset 70254592 /dev/loop0 box.img 
+sudo e2fsck -f /dev/loop0 
+sudo resize2fs /dev/loop0 322048
+sudo losetup -d /dev/loop0

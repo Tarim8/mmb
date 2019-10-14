@@ -2,7 +2,7 @@
 
 # Start and stop Box daemon
 #
-# Copyright Tarim 2013,2014,2015,2016
+# Copyright Tarim 2013,2014,2015,2016,2017
 #
 # Box is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -44,8 +44,8 @@ setdevice() {
     local OnlyEcho=echo
     case "${GPIO}" in
     [0-9] | [0-9][0-9] | [0-9][0-9][0-9])
-	OnlyEcho=""
-	;;
+        OnlyEcho=""
+        ;;
     esac
 
     $OnlyEcho hwctl export "${GPIO}" "$@"
@@ -76,43 +76,43 @@ cmd_run() {
     local NodeCmd
 
     if executable node; then
-	NodeCmd=node
+        NodeCmd=node
     elif executable nodejs; then
-	NodeCmd=nodejs
+        NodeCmd=nodejs
     else
-	err "Node not installed"
+        err "Node not installed"
     fi
 
     rm -f "${CommandPipe}"
     mkfifo "${CommandPipe}"
     for Arg in ${Platform}/*.output '+%l\n' ${CommandPipe} --delimiters '\2\3\r\n' ${Platform}/*serial --delimiters '\n' --unique ${Platform}/*.input --debounce 50 ${Platform}/*.switch; do
-	case "${Arg}" in
-	-* | +* | [0-9]* | \\* | *.pipe)
-	    PollArg="${PollArg} ${Arg}"
-	    ;;
-	*'*'*)
-	    ;;
-	*.pserial)
-	    pollarg "${Arg}"
-	    ;;
-	*.serial)
-	    [ -c "${Arg}" ] && {
-		pollarg "${Arg}"
-		stty 9600 raw -echo -echoe -echok -echoctl -echoke  < ${Arg}
-	    }
-	    ;;
-	*.switch)
-	    pollarg "${Arg}"
-	    setdevice "${Arg}" in both up
-	    ;;
-	*.input)
-	    pollarg "${Arg}"
-	    setdevice "${Arg}" in both
-	    ;;
-	*.output)
-	    setdevice "${Arg}" out
-	    ;;
-	esac
+        case "${Arg}" in
+        -* | +* | [0-9]* | \\* | *.pipe)
+            PollArg="${PollArg} ${Arg}"
+            ;;
+        *'*'*)
+            ;;
+        *.pserial)
+            pollarg "${Arg}"
+            ;;
+        *.serial)
+            [ -c "${Arg}" ] && {
+                pollarg "${Arg}"
+                stty 9600 raw -echo -echoe -echok -echoctl -echoke  < ${Arg}
+            }
+            ;;
+        *.switch)
+            pollarg "${Arg}"
+            setdevice "${Arg}" in both up
+            ;;
+        *.input)
+            pollarg "${Arg}"
+            setdevice "${Arg}" in both
+            ;;
+        *.output)
+            setdevice "${Arg}" out
+            ;;
+        esac
     done
 
     cd "${RunDir}"
@@ -161,8 +161,8 @@ cmd_start() {
 #
 cmd_status() {
     session -status "${PGIDFile}" || {
-	echo "Not running"
-	return 1
+        echo "Not running"
+        return 1
     }
 }
 
@@ -225,6 +225,94 @@ cmd_log() {
 
 
 
+# cmd_settags
+# Set up the control tags
+#
+cmd_settags() {
+    declare -A TagDirs=(
+        [attach]="selection/start/selectattachtag"
+        [detach]="selection/start/selectdetachtag"
+        [forward]="selection/start/forward"
+        [backward]="selection/start/backward"
+        [start]="universal/errors/start"
+        [shutdown]="universal/shutdown"
+    )
+    local Untag="unsettag"
+    local Line
+    local TagType
+    local TagDir
+    local Tag
+    local TagPath
+    local Tmp
+
+    cmd_stop
+
+    poll '+%l\n' "${CommandPipe}" /dev/stdin --delimiters '\2\3\r\n' ${Platform}/*serial | while 
+        echo -e "\n${TagType:+scan ${TagType} tag or }type: ${!TagDirs[@]} ${Untag} quit?"
+        read Line
+    do
+        case "${Line}" in
+        "")
+            ;;
+
+        [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F])
+            if [ -n "${TagType}" ]; then
+                Tag="rfid${Line}.tag"
+                TagPath="$(find "${RunDir}/" -name "${Tag}")"
+
+                if [ "${TagType}" = "${Untag}" ]; then
+                    if [ -n "${TagPath}" ]; then
+                        echo "Removing ${TagPath}"
+                        rm "${TagPath}"
+
+                    else
+                        echo "Tag ${Tag} does not exist"
+                    fi
+
+                else
+                    if [ -n "${TagPath}" ]; then
+                        echo "Tag ${TagPath} already exists"
+
+                    else
+                        echo "Creating ${TagDir}/${Tag}"
+                        touch "${TagDir}/${Tag}"
+                    fi
+                fi
+
+            else
+                echo "Tag type not set"
+            fi
+            ;;
+
+        quit)
+            echo "Done"
+            pkill poll
+            exit 0
+            ;;
+
+        "${Untag}")
+            TagType="${Line}"
+            TagDir=""
+            echo "Remove tags"
+            ;;
+
+        *)
+            local Tmp="${TagDirs[${Line}]}"
+            if [ -n "${Tmp}" ]; then
+                TagType="${Line}"
+                TagDir="${RunDir}/${Tmp}"
+                echo "Assign ${Line} tags (${TagDir})"
+
+            else
+                echo "Unknown command or tag ${Line}"
+            fi
+            ;;
+        esac
+    done
+}
+
+
+
 # cmd_reboot
 # Reboot the server
 #
@@ -247,7 +335,7 @@ cmd_halt() {
 cmd_sethost() {
     local Hostname="$1"
     [ "$(hostname)" = "${Hostname}" ] || {
-	sudo sed -i "s/$(hostname)/${Hostname}/" /etc/hosts /etc/hostname
+        sudo sed -i "s/$(hostname)/${Hostname}/" /etc/hosts /etc/hostname
         return 0
     }
     return 1
@@ -260,11 +348,11 @@ cmd_setup() {
     local Src="$1"
     shift
     [ -n "${Src}" ] || {
-	err "No source"
+        err "No source"
     }
 
     cmd_sethost "${1}" && {
-	passwd
+        passwd
     }
 
     mkdir -p "${MyDir}/logs"
@@ -310,29 +398,29 @@ cmd_help() {
     local Pattern
     case "$1" in
     "")
-	Pattern="/^# ${Prefix}/"
-	;;
+        Pattern="/^# ${Prefix}/"
+        ;;
     "all")
-	Pattern="/^# ${Prefix}/,/^${Prefix}/"
-	;;
+        Pattern="/^# ${Prefix}/,/^${Prefix}/"
+        ;;
     *)
-	Pattern="/^# ${Prefix}$1/,/^${Prefix}/"
-	;;
+        Pattern="/^# ${Prefix}$1/,/^${Prefix}/"
+        ;;
     esac
 
     awk -v me="$(basename $0) " -v spacer="  " "
-	${Pattern} {
-	    if( sub( /^# ?/, spacer ) ) {
-		found=1
-		sub( /^ *${Prefix}/, me )
-		print
-	    }
-	}
-	END {
-	    if( !found ) exit(2)
-	}
+        ${Pattern} {
+            if( sub( /^# ?/, spacer ) ) {
+                found=1
+                sub( /^ *${Prefix}/, me )
+                print
+            }
+        }
+        END {
+            if( !found ) exit(2)
+        }
     " < "$0" || {
-	err "No help topic"
+        err "No help topic"
     }
 }
 

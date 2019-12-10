@@ -2,7 +2,7 @@
 platform pi
 
 # product can be trove or mmb
-product trove
+product mmb
 
 # name of host for ethernet connections
 hostname meineckbox

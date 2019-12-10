@@ -1,0 +1,104 @@
+.nh
+.ad l
+.TH SESSION 1 "June 2015" "Tarim" "User Commands"
+.SH NAME
+.PP
+\f[B]session\f[] \- run a command with its own session id
+.SH SYNOPSIS
+.PP
+\f[B]session\f[] [\f[I]OPTIONS\f[]] \f[I]FILE\f[] \f[I]COMMAND\f[]
+.PP
+\f[B]session\f[] [\f[I]OPTIONS\f[]] \f[B]-kill\f[]
+[\f[I]-SIGNAL\f[]] \f[I]FILE\f[]
+.PP
+\f[B]session\f[] [\f[B]-status\f[]] \f[I]FILE\f[]
+.PP
+\f[B]session\f[]
+[\f[B]-help\f[]|\f[B]-man\f[]|\f[B]-html\f[]|\f[B]-version\f[]]
+.SH DESCRIPTION
+.PP
+\f[B]session\f[] is a lightweight daemon controller.
+\f[I]COMMAND\f[] is run under a new session id which is written to
+FILE.
+The \f[I]COMMAND\f[], along with any processes it spawned, can be
+terminated with the \f[B]-kill\f[] option.
+.PP
+\f[I]COMMAND\f[] may be run with a watchdog so that, if it dies, it
+can be automatically restarted after a delay.
+Alternatively a watchdog command may be run before restart.
+.PP
+Session ids are sometimes, confusingly, referred to as process
+group ids (particularly by \f[B]ps\f[]).
+Any process spawned will have the same session id as its parent
+unless it is specifically changed.
+Thus, any process spawned can be easily identified even if its
+original parent has terminated.
+.SH OPTIONS
+.PP
+Most options may be preceded by \f[B]-\f[] or \f[B]--\f[].
+\f[I]COMMAND\f[] can be multiple arguments.
+.SS \f[B]-k\f[], \f[B]-kill\f[] [\f[I]-SIGNAL\f[]]
+.PP
+Terminates all processes with the session id specified in
+\f[I]FILE\f[] and removes \f[I]FILE\f[].
+With \f[I]-SIGNAL\f[], sends each process that signal instead of
+\f[B]SIGTERM\f[] but doesn't remove \f[I]FILE\f[].
+Thus, it is possible to do:
+.PP
+\f[CR]
+      session\ -k\ -SIGINT\ /tmp/mydaemon.pgid
+      sleep\ 2
+      session\ -k\ /tmp/mydaemon.pgid
+\f[]
+.SS \f[B]-status\f[]
+.PP
+Lists all processes with that session id.
+.SS \f[B]-cleanup\f[]
+.PP
+If \f[I]COMMAND\f[] terminates then attempted to kill all other
+process with the same session id.
+Note that the default is not to terminate other session id
+processes when the initial \f[I]COMMAND\f[] terminates.
+.SS \f[B]-watchdog\f[] [\f[I]DELAY\f[]]
+.PP
+If \f[I]COMMAND\f[] terminates for any reason, wait for
+\f[I]DELAY\f[] (default 5) seconds and respawn the
+\f[I]COMMAND\f[].
+Implies \f[B]-cleanup\f[].
+.SS \f[B]-watchcmd\f[] \f[I]WATCHCOMMAND\f[]
+.PP
+Instead waiting for DELAY seconds; execute \f[I]WATCHCOMMAND\f[].
+Implies \f[B]-cleanup\f[].
+\f[I]WATCHCOMMAND\f[] must be a single or quoted argument.
+It will be called with arguments of \f[I]FILE\f[] and
+\f[I]COMMAND\f[].
+.SS \f[B]-user\f[] \f[I]USER\f[]
+.PP
+Run the command as this user.
+If given, this must be the first option.
+Maybe useful when calling session from rc.local (which is run as
+root).
+.SS \f[B]-help\f[], \f[B]-man\f[], \f[B]-html\f[]
+.PP
+Gives this documentation in text, man or html format.
+.SH FILES
+.PP
+FILE is the file that session keeps the session id of the
+\f[I]COMMAND\f[] in.
+Most usefully kept in a directory, such as \f[B]/tmp\f[], which
+will not remain over reboots.
+.SH CAVEATS
+.PP
+Option processing is somewhat picky.
+Specifying more than one of \f[B]-watchdog\f[], \f[B]-watchcmd\f[],
+\f[B]-cleanup\f[] will give somewhat confusing error messages.
+If specified, \f[B]-user\f[] must come first and will tend to trash
+quoted arguments.
+.SH AUTHOR
+.PP
+Written by Tarim.
+Error reports to <session-cmd@mediaplaygrounds.co.uk>.
+.SH SEE ALSO
+.PP
+\f[B]pkill\f[](1), \f[B]setsid\f[](1), \f[B]signal\f[](7)
+
